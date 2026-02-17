@@ -162,6 +162,14 @@ body {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  /* Allow wrapping if needed */
+}
+
+.gk-input {
+  width: 60px;
+  /* Make GK inputs slightly smaller */
+  text-align: center;
 }
 
 .player-no-input {
