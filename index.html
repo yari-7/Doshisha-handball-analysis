@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム ハンドボール分析</title>
+    <meta name="description" content="ハンドボールの試合中にリアルタイムでデータを入力し、分析結果を即座に確認できるダッシュボード">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+
+    <!-- ===== ① 試合設定画面 ===== -->
+    <div class="screen" id="setupScreen">
+        <div class="setup-container">
+            <div class="setup-header">
+                <div class="setup-icon">🤾</div>
+                <h1>リアルタイム試合分析</h1>
+                <p class="setup-subtitle">試合設定を入力して開始</p>
+            </div>
+
+            <div class="setup-card">
+                <div class="setup-section">
+                    <h2 class="setup-section-title">📋 試合情報</h2>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label>大会名・メモ</label>
+                        <input type="text" id="tournamentNameInput" placeholder="例: インカレ予選" class="form-input">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>自チーム名</label>
+                            <input type="text" id="ownTeamInput" placeholder="例: 滋賀大" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label>相手チーム名</label>
+                            <input type="text" id="oppTeamInput" placeholder="例: 龍谷大" class="form-input">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-section">
+                    <h2 class="setup-section-title">👥 自チーム選手登録</h2>
+                    <p class="setup-hint">背番号と名前を入力して「追加」をクリック（名前は省略可）</p>
+                    <div class="player-add-row">
+                        <input type="number" id="playerNoInput" placeholder="#" class="form-input player-no-input"
+                            min="1" max="99">
+                        <input type="text" id="playerNameInput" placeholder="名前（省略可）"
+                            class="form-input player-name-input">
+                        <button class="btn btn-add" id="addPlayerBtn">追加</button>
+                    </div>
+                    <div class="registered-players" id="registeredPlayers"></div>
+                </div>
+
+                <div class="setup-section">
+                    <h2 class="setup-section-title">👥 相手チーム選手登録</h2>
+                    <p class="setup-hint">背番号を入力して「追加」（名前は省略可）</p>
+                    <div class="player-add-row">
+                        <input type="number" id="oppPlayerNoInput" placeholder="#" class="form-input player-no-input"
+                            min="1" max="99">
+                        <input type="text" id="oppPlayerNameInput" placeholder="名前（省略可）"
+                            class="form-input player-name-input">
+                        <button class="btn btn-add" id="addOppPlayerBtn">追加</button>
+                    </div>
+                    <div class="registered-players" id="registeredOppPlayers"></div>
+                </div>
+
+                <div class="setup-section">
+                    <h2 class="setup-section-title">🧤 GK設定 (最大3名)</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>自チームGK</label>
+                            <div class="gk-inputs-row">
+                                <input type="number" id="ownGkInput1" placeholder="1" class="form-input gk-input"
+                                    min="1" max="99">
+                                <input type="number" id="ownGkInput2" placeholder="2" class="form-input gk-input"
+                                    min="1" max="99">
+                                <input type="number" id="ownGkInput3" placeholder="3" class="form-input gk-input"
+                                    min="1" max="99">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>相手チームGK</label>
+                            <div class="gk-inputs-row">
+                                <input type="number" id="oppGkInput1" placeholder="1" class="form-input gk-input"
+                                    min="1" max="99">
+                                <input type="number" id="oppGkInput2" placeholder="2" class="form-input gk-input"
+                                    min="1" max="99">
+                                <input type="number" id="oppGkInput3" placeholder="3" class="form-input gk-input"
+                                    min="1" max="99">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-section">
+                    <h2 class="setup-section-title">⏱️ 試合設定</h2>
+                    <div class="form-group">
+                        <label>ハーフ時間（分）</label>
+                        <input type="number" id="halfDurationInput" class="form-input" value="30" min="1" max="60">
+                    </div>
+                </div>
+
+                <button class="btn btn-start" id="startMatchBtn">🏟️ 試合開始</button>
+            </div>
+
+            <!-- 途中復帰 -->
+            <div class="resume-section" id="resumeSection" style="display:none;">
+                <div class="resume-card">
+                    <div class="resume-title">📂 前回の試合データがあります</div>
+                    <div class="resume-info" id="resumeInfo"></div>
+                    <div class="resume-actions">
+                        <button class="btn btn-resume" id="resumeBtn">試合を再開</button>
+                        <button class="btn btn-reset" id="resetBtn">新規試合</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ② メイン画面（入力＋分析） ===== -->
+    <div class="screen" id="mainScreen" style="display:none;">
+
+        <!-- 固定ヘッダー -->
+        <div class="main-header">
+            <div class="main-header-top">
+                <div class="header-team own" id="headerOwnName"></div>
+                <div class="header-score">
+                    <span class="header-score-num own" id="headerOwnScore">0</span>
+                    <span class="header-score-sep">-</span>
+                    <span class="header-score-num opp" id="headerOppScore">0</span>
+                </div>
+                <div class="header-team opp" id="headerOppName"></div>
+            </div>
+            <div class="header-half-scores">
+                <span id="headerHalfOwn"></span>
+                <span id="headerHalfOpp"></span>
+            </div>
+
+            <!-- Default Sticky Timer (Hidden by default) -->
+            <div id="stickyTimer" class="sticky-timer" style="display:none;">
+                <span class="sticky-time" id="stickyTime">00:00</span>
+                <span class="sticky-period" id="stickyPeriod"></span>
+                <button class="sticky-btn" id="stickyToggleBtn" onclick="toggleStickyStopwatch()">⏸️</button>
+            </div>
+
+            <!-- タブナビ -->
+            <div class="main-tabs">
+                <button class="main-tab active" data-view="input" id="tabInput">⌨️ 入力</button>
+                <button class="main-tab" data-view="analysis" id="tabAnalysis">📊 分析</button>
+            </div>
+        </div>
+
+        <!-- ===== 入力ビュー ===== -->
+        <div class="view active" id="inputView">
+            <!-- ===== 新レイアウト: Grid System ===== -->
+            <div class="layout-container">
+
+                <!-- TOP: Stopwatch, Team, Phase -->
+                <div class="layout-top">
+                    <div class="top-row-stats">
+                        <!-- ストップウォッチ (Compact) -->
+                        <div class="stopwatch-compact">
+                            <div class="sw-display-row">
+                                <span class="sw-time" id="stopwatchTime">00:00</span>
+                                <span class="sw-period" id="stopwatchPeriod">00~05</span>
+                                <span class="sw-badge" id="halfBadge">前半</span>
+                            </div>
+                            <div class="sw-controls-mini">
+                                <button class="mini-btn" id="swStartBtn">▶</button>
+                                <button class="mini-btn" id="swPauseBtn" style="display:none;">⏸</button>
+                                <button class="mini-btn" id="swResumeBtn" style="display:none;">▶</button>
+                                <button class="mini-btn" id="swHalfBtn">🔄</button>
+                                <button class="mini-btn" id="swEndBtn" style="display:none;">🏁</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="top-row-selectors">
+                        <!-- チーム選択 -->
+                        <div class="selector-group">
+                            <div class="selector-label">チーム</div>
+                            <div class="team-select-compact">
+                                <button class="team-btn own active" data-team="Own" id="teamOwnBtn">
+                                    <span id="teamBtnOwnName">Own</span>
+                                </button>
+                                <button class="team-btn opp" data-team="Opp" id="teamOppBtn">
+                                    <span id="teamBtnOppName">Opp</span>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- フェーズ -->
+                        <div class="selector-group">
+                            <div class="selector-label">フェーズ</div>
+                            <div class="phase-select-compact">
+                                <button class="phase-btn active" data-phase="SetOF">セットOF</button>
+                                <button class="phase-btn" data-phase="FB+Q">FB+Q</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PLAYER SELECTION (Moved here) -->
+                <div class="bottom-player-area" style="margin-top: 4px;">
+                    <div class="player-label">選手:</div>
+                    <div class="player-scroll-container">
+                        <div class="player-grid" id="playerGrid"></div>
+                    </div>
+                    <div class="opp-player-input" id="oppPlayerInput" style="display:none;">
+                        <input type="number" id="oppPlayerNo" placeholder="#" class="form-input opp-no-input">
+                    </div>
+                </div>
+
+
+                <!-- MIDDLE: 3 Columns -->
+                <div class="layout-middle">
+
+                    <!-- LEFT: Court & SubActions -->
+                    <div class="col-left">
+                        <div class="input-court-area">
+                            <div class="court-shape-input">
+                                <!-- サイド (LW, RW) -->
+                                <div class="court-row-top">
+                                    <button class="court-action-btn side-left" data-area="LW">LW</button>
+                                    <button class="court-action-btn side-right" data-area="RW">RW</button>
+                                </div>
+                                <!-- バック (L, C, R) -->
+                                <div class="court-row-back">
+                                    <button class="court-action-btn back-left" data-area="L">L</button>
+                                    <button class="court-action-btn back-center" data-area="C">C</button>
+                                    <button class="court-action-btn back-right" data-area="R">R</button>
+                                </div>
+                            </div>
+
+                            <!-- サブアクション -->
+                            <div class="sub-action-container" id="subActionContainer" style="display:none;">
+                                <div class="sub-action-grid">
+                                    <button class="sub-action-btn shoot" data-sub="WS">WS<small>サイド</small></button>
+                                    <button class="sub-action-btn shoot" data-sub="DS">DS<small>ロング</small></button>
+                                    <button class="sub-action-btn shoot" data-sub="BT">BT<small>カットイン</small></button>
+                                    <button class="sub-action-btn shoot" data-sub="PS">PS<small>ポスト</small></button>
+                                    <button class="sub-action-btn shoot" data-sub="LS">LS<small>ライン</small></button>
+                                    <button class="sub-action-btn turnover"
+                                        data-sub="TO">TO<small>ターンオーバー</small></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CENTER: Course & Result -->
+                    <div class="col-center">
+                        <div class="center-content-wrapper">
+                            <!-- PS Detail Section -->
+                            <div id="psDetailSection" style="display:none;">
+                                <div class="ps-detail-title">ポストシュート詳細</div>
+                                <div class="ps-detail-grid">
+                                    <button class="ps-detail-btn" data-detail="Block">ブロック</button>
+                                    <button class="ps-detail-btn" data-detail="Behind">裏抜け</button>
+                                </div>
+                            </div>
+
+                            <!-- シュートコース -->
+                            <div id="courseSection" style="display:none;">
+                                <div class="course-layout">
+                                    <div class="course-grid-compact">
+                                        <button class="course-btn" data-course="1">1</button>
+                                        <button class="course-btn" data-course="2">2</button>
+                                        <button class="course-btn" data-course="3">3</button>
+                                        <button class="course-btn" data-course="4">4</button>
+                                        <button class="course-btn" data-course="5">5</button>
+                                        <button class="course-btn" data-course="6">6</button>
+                                        <button class="course-btn" data-course="7">7</button>
+                                        <button class="course-btn" data-course="8">8</button>
+                                        <button class="course-btn" data-course="9">9</button>
+                                    </div>
+                                    <button class="course-btn loop-btn" data-course="10">ループ</button>
+                                </div>
+                            </div>
+
+                            <!-- 結果 (Shoot & TO) -->
+                            <div id="resultSection" style="display:none;">
+                                <div class="result-grid-compact" id="resultGrid"></div>
+                            </div>
+
+                            <!-- PT Sequence: Sanction Select -->
+                            <div id="sanctionSequenceSection" style="display:none;">
+                                <div class="sanction-sequence-container">
+                                    <div class="sanction-title">PTの理由（罰則）を選択</div>
+                                    <div class="sanction-options">
+                                        <button class="sanction-btn" data-sanction="ライン内防御">ライン内防御 (罰則なし)</button>
+                                        <button class="sanction-btn warning" data-sanction="警告">警告</button>
+                                        <button class="sanction-btn suspension" data-sanction="退場">退場 (2分)</button>
+                                        <button class="sanction-btn disqualification" data-sanction="失格">失格</button>
+                                    </div>
+                                    <div class="sanction-target-input">
+                                        <label>対象DF番号 (相手)</label>
+                                        <input type="number" id="sanctionDefenderNo" placeholder="No." min="1" max="99">
+                                    </div>
+                                    <button class="confirm-btn-next" id="sanctionNextBtn">次へ (シューター選択)</button>
+                                    <button class="cancel-btn-sub" id="sanctionCancelBtn">キャンセル</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Fixed Actions -->
+                    <div class="col-right">
+                        <div class="fixed-actions-vertical">
+                            <!-- PT removed as requested (Legacy) -->
+                            <button class="fixed-btn shoot" data-fixed="EG">EG</button>
+                            <div class="fixed-divider"></div>
+                            <button class="fixed-btn timeout" data-fixed="タイムアウト">TIME</button>
+                            <div class="fixed-divider"></div>
+                            <button class="fixed-btn penalty" data-fixed="警告">警告</button>
+                            <button class="fixed-btn penalty" data-fixed="退場">退場</button>
+                            <button class="fixed-btn penalty" data-fixed="失格">失格</button>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- BOTTOM: Players & Confirm -->
+                <div class="layout-bottom">
+
+                    <div class="bottom-confirm-area" id="confirmSection" style="display:none;">
+                        <button class="confirm-btn-large" id="confirmBtn">決定</button>
+                    </div>
+                </div>
+
+                <!-- GK Change (Compact Footer) -->
+                <div class="layout-footer">
+                    <div class="gk-display-compact">
+                        <span>GK Own: <strong id="currentOwnGk">-</strong> <button class="link-btn"
+                                id="changeOwnGkBtn">変</button></span>
+                        <span>GK Opp: <strong id="currentOppGk">-</strong> <button class="link-btn"
+                                id="changeOppGkBtn">変</button></span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 入力履歴 -->
+            <div class="history-panel">
+                <div class="history-header">
+                    <span>📋 入力履歴</span>
+                    <span class="history-count" id="historyCount">0件</span>
+                </div>
+                <div class="history-list" id="historyList"></div>
+            </div>
+
+            <!-- 編集モーダル -->
+            <div class="edit-modal-overlay" id="editModalOverlay" style="display:none;">
+                <div class="edit-modal">
+                    <div class="edit-modal-header">
+                        <span>✏️ プレー編集</span>
+                        <button class="edit-modal-close" id="editModalClose">✕</button>
+                    </div>
+                    <div class="edit-modal-body">
+                        <div class="edit-field">
+                            <label>⏱ 時間 (mm:ss)</label>
+                            <input type="text" id="editTime" placeholder="12:34">
+                        </div>
+                        <div class="edit-field">
+                            <label>チーム</label>
+                            <select id="editTeam">
+                                <option value="Own">自チーム</option>
+                                <option value="Opp">相手</option>
+                            </select>
+                        </div>
+                        <div class="edit-field">
+                            <label>背番号</label>
+                            <input type="number" id="editNo" placeholder="番号">
+                        </div>
+                        <div class="edit-field">
+                            <label>フェーズ</label>
+                            <select id="editPhase">
+                                <option value="SetOF">セットOF</option>
+                                <option value="FB+Q">FB+Q</option>
+                            </select>
+                        </div>
+                        <div class="edit-field">
+                            <label>アクション</label>
+                            <select id="editAction">
+                                <option value="DS">DS</option>
+                                <option value="LS">LS</option>
+                                <option value="WS">WS</option>
+                                <option value="BT">BT</option>
+                                <option value="EG">EG</option>
+                                <option value="PT">PT</option>
+                                <option value="TO">TO</option>
+                                <option value="警告">警告</option>
+                                <option value="退場">退場</option>
+                                <option value="失格">失格</option>
+                                <option value="タイムアウト">タイムアウト</option>
+                            </select>
+                        </div>
+                        <div class="edit-field">
+                            <label>ゾーン</label>
+                            <select id="editZone">
+                                <option value="">-</option>
+                                <option value="L">L</option>
+                                <option value="C">C</option>
+                                <option value="R">R</option>
+                            </select>
+                        </div>
+                        <div class="edit-field">
+                            <label>コース</label>
+                            <select id="editCourse">
+                                <option value="">-</option>
+                                <option value="1">1 左上</option>
+                                <option value="2">2 真ん中上</option>
+                                <option value="3">3 右上</option>
+                                <option value="4">4 左中段</option>
+                                <option value="5">5 真ん中</option>
+                                <option value="6">6 右中段</option>
+                                <option value="7">7 左下</option>
+                                <option value="8">8 真ん中下</option>
+                                <option value="9">9 右下</option>
+                                <option value="10">10 ループ</option>
+                            </select>
+                        </div>
+                        <div class="edit-field">
+                            <label>結果</label>
+                            <select id="editResult">
+                                <option value="Goal">Goal</option>
+                                <option value="Save">Save</option>
+                                <option value="Out">Out</option>
+                                <option value="Block">Block</option>
+                                <option value="TM">TM</option>
+                                <option value="VL">VL</option>
+                                <option value="警告">警告</option>
+                                <option value="退場">退場</option>
+                                <option value="失格">失格</option>
+                                <option value="タイムアウト">タイムアウト</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="edit-modal-footer">
+                        <button class="edit-btn-cancel" id="editCancelBtn">キャンセル</button>
+                        <button class="edit-btn-save" id="editSaveBtn">💾 保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 分析ビュー ===== -->
+        <div class="view" id="analysisView" style="display:none;">
+            <div class="dashboard">
+
+                <!-- KPI Cards -->
+                <div class="kpi-grid" id="kpiGrid"></div>
+
+                <!-- Team Comparison -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">📊</span>チーム統計比較</div>
+                    <div class="tab-bar" id="teamTabs">
+                        <button class="tab-btn active" data-tab="total">総計</button>
+                        <button class="tab-btn" data-tab="first">前半</button>
+                        <button class="tab-btn" data-tab="second">後半</button>
+                    </div>
+                    <div class="comparison-grid" id="teamComparison"></div>
+                </div>
+
+                <!-- Time-based Charts -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">📈</span>時間帯別分析</div>
+                    <div class="charts-row">
+                        <div class="chart-card">
+                            <canvas id="timeAttackChart"></canvas>
+                        </div>
+                        <div class="chart-card">
+                            <canvas id="timeGoalChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Shoot Type Charts -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">🎯</span>シュート種別分析</div>
+                    <div class="charts-row">
+                        <div class="chart-card">
+                            <canvas id="shootTypeOwnChart"></canvas>
+                        </div>
+                        <div class="chart-card">
+                            <canvas id="shootTypeOppChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Shot Zone Distribution -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">🏟️</span>シュートゾーン分布</div>
+                    <div class="court-container">
+                        <div class="court-wrapper">
+                            <div class="court-side">
+                                <div class="court-side-title own" id="courtOwnTitle"></div>
+                                <canvas id="courtOwn" class="court-canvas" width="500" height="400"></canvas>
+                            </div>
+                            <div class="court-side">
+                                <div class="court-side-title opp" id="courtOppTitle"></div>
+                                <canvas id="courtOpp" class="court-canvas" width="500" height="400"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Shoot Heatmap -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">🔥</span>シュートヒートマップ</div>
+                    <div class="heatmap-controls-top">
+                        <select id="heatmapTeamSelect" class="heatmap-select">
+                            <option value="Own">自チーム</option>
+                            <option value="Opp">相手チーム</option>
+                        </select>
+                        <div class="heatmap-tabs" id="heatmapActionTabs">
+                            <button class="tab-btn active" data-action="DS">DS</button>
+                            <button class="tab-btn" data-action="LS">LS</button>
+                            <button class="tab-btn" data-action="WS">WS</button>
+                            <button class="tab-btn" data-action="BT">BT</button>
+                            <button class="tab-btn" data-action="PS">PS</button>
+                            <button class="tab-btn" data-action="PT">PT</button>
+                        </div>
+                    </div>
+
+                    <div class="heatmap-areas-container">
+                        <div class="heatmap-area">
+                            <div class="heatmap-title">Left (L)</div>
+                            <div class="heatmap-grid" id="heatmapGridL"></div>
+                        </div>
+                        <div class="heatmap-area">
+                            <div class="heatmap-title">Center (C)</div>
+                            <div class="heatmap-grid" id="heatmapGridC"></div>
+                        </div>
+                        <div class="heatmap-area">
+                            <div class="heatmap-title">Right (R)</div>
+                            <div class="heatmap-grid" id="heatmapGridR"></div>
+                        </div>
+                    </div>
+
+                    <div class="heatmap-controls-bottom">
+                        <select id="heatmapPlayerSelect" class="heatmap-select-wide">
+                            <option value="all">全体</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- GK Analysis -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">🧤</span>GK分析</div>
+                    <div class="gk-grid" id="gkSection"></div>
+                    <div class="gk-half-stats" id="gkHalfStats"></div>
+                </div>
+
+                <!-- Player Shooting Ranking -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">🏆</span>選手別シュート成功率ランキング</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="chart-card" style="padding:12px;" id="rankOwnCard"></div>
+                        <div class="chart-card" style="padding:12px;" id="rankOppCard"></div>
+                    </div>
+                </div>
+
+                <!-- Action Timeline -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">⏱️</span>アクションタイムライン</div>
+                    <div class="timeline-filters" id="timelineFilters"></div>
+                    <div class="timeline-container" id="timelineContainer"></div>
+                </div>
+
+                <!-- Scoring Flow -->
+                <div class="section">
+                    <div class="section-title"><span class="icon">⚡</span>得点の流れ</div>
+                    <div class="chart-card">
+                        <div class="scoring-flow-scroll" id="scoringFlowScroll">
+                            <canvas id="scoringFlowCanvas" height="300"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 試合管理ボタン -->
+        <button class="fab-btn" id="matchMenuBtn" title="試合メニュー">⚙️</button>
+        <div class="match-menu" id="matchMenu" style="display:none;">
+            <button class="menu-item" id="editMemberBtn">👥 メンバー編集</button>
+            <button class="menu-item" id="newMatchBtn">🆕 新規試合</button>
+            <button class="menu-item" id="exportBtn">📤 データ出力</button>
+        </div>
+    </div>
+
+    <!-- メンバー編集モーダル -->
+    <div class="modal-overlay" id="memberEditModalOverlay" style="display:none;">
+        <div class="edit-modal">
+            <div class="edit-modal-header">メンバー編集</div>
+            <div class="setup-group">
+                <label>選手登録</label>
+                <div class="player-input-row">
+                    <input type="number" id="editPlayerNoInput" placeholder="No." class="form-input small">
+                    <input type="text" id="editPlayerNameInput" placeholder="名前" class="form-input">
+                    <button class="btn-primary" id="editAddPlayerBtn">追加</button>
+                </div>
+                <!-- 登録済みリスト -->
+                <div class="registered-list" id="editRegisteredPlayers"></div>
+            </div>
+            <div class="edit-modal-footer">
+                <button class="edit-btn-cancel" id="memberEditCloseBtn">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
