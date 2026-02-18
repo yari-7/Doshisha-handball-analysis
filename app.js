@@ -1539,9 +1539,24 @@ function initMatchMenu() {
 // ========================================
 // データ管理 (HTML Export)
 // ========================================
-document.getElementById('exportHtmlBtn').addEventListener('click', exportAnalysisHtml);
+const exportBtn = document.getElementById('exportHtmlBtn');
+if (exportBtn) {
+  exportBtn.addEventListener('click', async () => {
+    try {
+      await exportAnalysisHtml();
+    } catch (e) {
+      alert(`【エラー】\nHTML書き出し中にエラーが発生しました。\n${e.message}`);
+      console.error(e);
+    }
+  });
+}
 
 async function exportAnalysisHtml() {
+  if (!matchState || !matchState.actions) {
+    alert('データが読み込まれていません。');
+    return;
+  }
+
   if (matchState.actions.length === 0) {
     if (!confirm('データがありませんが、空の状態で書き出しますか？')) return;
   }
