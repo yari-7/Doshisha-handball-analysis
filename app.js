@@ -1144,6 +1144,7 @@ function showTOResults() {
     <button class="result-btn miss" data-result="VL" data-memo="ラインクロス">ラインクロス</button>
     <button class="result-btn miss" data-result="VL" data-memo="ダブルドリブル">ダブルドリブル</button>
     <button class="result-btn miss" data-result="VL" data-memo="チャージング">チャージング</button>
+    <button class="result-btn miss" data-result="VL" data-memo="パッシブ">パッシブ</button>
     <button class="result-btn miss" data-result="TO" data-memo="その他">その他</button>
   `;
 
@@ -1536,140 +1537,7 @@ function initMatchMenu() {
   });
 }
 
-// ========================================
-// データ管理 (HTML Export)
-// ========================================
-const exportBtn = document.getElementById('exportHtmlBtn');
-if (exportBtn) {
-  exportBtn.addEventListener('click', async () => {
-    try {
-      await exportAnalysisHtml();
-    } catch (e) {
-      alert(`【エラー】\nHTML書き出し中にエラーが発生しました。\n${e.message}`);
-      console.error(e);
-    }
-  });
-}
 
-async function exportAnalysisHtml() {
-  if (!matchState || !matchState.actions) {
-    alert('データが読み込まれていません。');
-    return;
-  }
-
-  if (matchState.actions.length === 0) {
-    if (!confirm('データがありませんが、空の状態で書き出しますか？')) return;
-  }
-
-  const tournamentName = matchState.tournamentName || '';
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const filename = `${tournamentName ? `[${tournamentName}]_` : ''}Analysis_${dateStr}.html`;
-
-  // Get current styles
-  let cssContent = '';
-  try {
-    const response = await fetch('style.css');
-    if (!response.ok) throw new Error('Network response was not ok');
-    cssContent = await response.text();
-  } catch (e) {
-    console.warn('CSS fetch failed', e);
-    alert('【保存失敗】\nブラウザのセキュリティ制限により、このファイル（index.html）を直接開いている状態ではデザイン情報を読み込めません。\n\nGitHub PagesなどにアップロードしてWeb上で実行するか、ローカルサーバー経由で開いてください。');
-    return;
-  }
-
-  // Get current JS
-  let jsContent = '';
-  try {
-    const response = await fetch('app.js');
-    if (!response.ok) throw new Error('Network response was not ok');
-    jsContent = await response.text();
-  } catch (e) {
-    alert('【保存失敗】\nJSファイルの読み込みに失敗しました。\nWebサーバー上（GitHub Pages等）で実行してください。');
-    return;
-  }
-
-  // Current State
-  const jsonState = JSON.stringify(matchState);
-
-  // Construct HTML
-  const html = `
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${tournamentName} Analysis - ${dateStr}</title>
-    <style>
-      ${cssContent}
-      /* Overrides for Export View */
-      .screen { display: none !important; }
-      #mainScreen { display: block !important; height: auto; overflow: visible; }
-      #inputView { display: none !important; }
-      #analysisView { display: block !important; }
-      .sticky-timer { display: none !important; }
-      .main-tabs { display: none !important; }
-      .nav-bar { display: none; }
-      .export-area { display: none; }
-      .setup-form .form-group { display: none; }
-    </style>
-</head>
-<body class="export-mode">
-    <!-- REUSE DOM STRUCTURE FROM ORIGINAL -->
-    ${document.getElementById('mainScreen').outerHTML}
-
-    <!-- Hide other screens but keep structure if needed for JS ref. -->
-    <div style="display:none;">
-      <div id="setupScreen"></div>
-      <!-- mainScreen is already above -->
-      <div id="inputView"></div>
-      <!-- Add dummy buttons if app.js tries to bind them? 
-           We will handle this by a flag in JS. -->
-    </div>
-
-    <script>
-      window.isExported = true;
-      window.initialData = ${jsonState};
-    </script>
-    <script>
-      ${jsContent}
-    </script>
-</body>
-</html>
-  `;
-
-  // Download
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// ---------------------------------------------------------
-// アプリ初期化 (Export Mode Check)
-// ---------------------------------------------------------
-// This should be at the very end or replacing 'init' call
-if (window.isExported) {
-  // EXPORT MODE INITIALIZATION
-  matchState = window.initialData;
-  // Initialize Stats & Graphs only
-  // Mock necessary UI elements if missing or just run render
-  window.onload = () => {
-    renderAnalysis();
-    // Update headers in analysis view
-    document.getElementById('headerOwnScoreAna').textContent = matchState.ownScore;
-    document.getElementById('headerOppScoreAna').textContent = matchState.oppScore;
-    // ... any other specific updates
-  };
-} else {
-  // NORMAL MODE
-  // Existing initialization usually happens via script load or window.onload
-  // app.js seems to run immediately.
-}
 // ========================================
 // メンバー編集モーダル制御
 // ========================================
