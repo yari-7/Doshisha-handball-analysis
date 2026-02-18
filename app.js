@@ -706,6 +706,44 @@ function initStopwatchEvents() {
   document.getElementById('swResumeBtn').addEventListener('click', resumeStopwatch);
   document.getElementById('swHalfBtn').addEventListener('click', endFirstHalf);
   document.getElementById('swEndBtn').addEventListener('click', endMatch);
+
+  // Time Click Edit
+  document.getElementById('stopwatchTime').addEventListener('click', editStopwatchTime);
+  document.getElementById('stickyTime').addEventListener('click', editStopwatchTime);
+}
+
+function editStopwatchTime() {
+  const currentTotalSec = Math.floor(stopwatch.elapsed);
+  const mm = String(Math.floor(currentTotalSec / 60)).padStart(2, '0');
+  const ss = String(currentTotalSec % 60).padStart(2, '0');
+
+  const input = prompt('時間を入力してください (例: 10:00)', `${mm}:${ss}`);
+  if (!input) return;
+
+  const parts = input.split(':');
+  if (parts.length !== 2) {
+    alert('形式が正しくありません (例: 10:00)');
+    return;
+  }
+
+  const newMin = parseInt(parts[0]);
+  const newSec = parseInt(parts[1]);
+
+  if (isNaN(newMin) || isNaN(newSec) || newSec < 0 || newSec > 59) {
+    alert('正しい数値を入力してください');
+    return;
+  }
+
+  const newTotalSec = (newMin * 60) + newSec;
+  stopwatch.elapsed = newTotalSec;
+
+  // Adjust/Reset Start Timestamp if running to maintain continuity without jump
+  if (stopwatch.running) {
+    stopwatch.startTimestamp = Date.now() - (stopwatch.elapsed * 1000);
+  }
+
+  updateStopwatchDisplay();
+  saveData();
 }
 
 function startStopwatch() {
@@ -736,8 +774,14 @@ function tickStopwatch() {
 
 function endFirstHalf() {
   pauseStopwatch();
-  if (!confirm('前半を終了しますか？')) return;
-  stopwatch.half = 2;
+  // Valid for: 1 (1st), 3 (Ext1-1st), 5 (Ext2-1st)
+  let msg = '前半を終了しますか？';
+  if (stopwatch.half === 3) msg = '延長1 前半を終了しますか？';
+  if (stopwatch.half === 5) msg = '延長2 前半を終了しますか？';
+
+  if (!confirm(msg)) return;
+
+  stopwatch.half += 1; // 1->2, 3->4, 5->6
   stopwatch.elapsed = 0;
   stopwatch.startTimestamp = null;
   updateStopwatchDisplay();
@@ -747,8 +791,33 @@ function endFirstHalf() {
 
 function endMatch() {
   pauseStopwatch();
-  if (!confirm('後半を終了しますか？')) return;
-  stopwatch.finished = true;
+  // Valid for: 2 (2nd), 4 (Ext1-2nd), 6 (Ext2-2nd)
+
+  if (stopwatch.half === 6) {
+    if (!confirm('延長2 後半を終了して、試合を終了しますか？')) return;
+    stopwatch.finished = true;
+  } else if (stopwatch.half === 4) {
+    // Ext 1 End
+    const choice = prompt('延長1 後半終了。\n1: 試合終了\n2: 延長2 へ進む', '1');
+    if (choice === '2') {
+      stopwatch.half = 5;
+      stopwatch.elapsed = 0;
+      stopwatch.startTimestamp = null;
+    } else {
+      stopwatch.finished = true;
+    }
+  } else {
+    // Regular 2nd Half End (half=2)
+    const choice = prompt('後半終了。\n1: 試合終了\n2: 延長1 へ進む', '1');
+    if (choice === '2') {
+      stopwatch.half = 3;
+      stopwatch.elapsed = 0;
+      stopwatch.startTimestamp = null;
+    } else {
+      stopwatch.finished = true;
+    }
+  }
+
   updateStopwatchDisplay();
   updateStopwatchButtons();
   saveData();
@@ -756,9 +825,15 @@ function endMatch() {
 
 function getTimePeriodFromStopwatch() {
   const mins = Math.floor(stopwatch.elapsed / 60);
-  const offset = stopwatch.half === 1 ? 0 : (matchState.halfDuration || 30);
-  const periodStart = Math.min(Math.floor(mins / 5) * 5, (matchState.halfDuration || 30) - 5);
-  // 5分刻みが上限を超えないように調整（簡易的）
+  const halfDur = matchState.halfDuration || 30;
+  let offset = 0;
+
+  if (stopwatch.half === 1) offset = 0;
+  else if (stopwatch.half === 2) offset = halfDur;
+  else if (stopwatch.half === 3) offset = halfDur * 2; // Ext1 Start (e.g. 60)
+  else if (stopwatch.half === 4) offset = (halfDur * 2) + 5; // Ext1 Second
+  else if (stopwatch.half === 5) offset = (halfDur * 2) + 10; // Ext2 Start
+  else if (stopwatch.half === 6) offset = (halfDur * 2) + 15; // Ext2 Second
 
   const pStart = Math.floor(mins / 5) * 5;
   const pEnd = pStart + 5;
@@ -793,11 +868,16 @@ function updateStopwatchDisplay() {
   if (stopwatch.finished) {
     badgeEl.classList.add('finished');
     badgeEl.textContent = '試合終了';
-  } else if (stopwatch.half === 2) {
-    badgeEl.classList.add('second-half');
-    badgeEl.textContent = '後半';
   } else {
-    badgeEl.textContent = '前半';
+    switch (stopwatch.half) {
+      case 1: badgeEl.textContent = '前半'; break;
+      case 2: badgeEl.classList.add('second-half'); badgeEl.textContent = '後半'; break;
+      case 3: badgeEl.className = 'stopwatch-half-badge ext-half'; badgeEl.textContent = '延長1 前'; break;
+      case 4: badgeEl.className = 'stopwatch-half-badge ext-half'; badgeEl.textContent = '延長1 後'; break;
+      case 5: badgeEl.className = 'stopwatch-half-badge ext-half'; badgeEl.textContent = '延長2 前'; break;
+      case 6: badgeEl.className = 'stopwatch-half-badge ext-half'; badgeEl.textContent = '延長2 後'; break;
+      default: badgeEl.textContent = '-';
+    }
   }
 }
 
@@ -821,23 +901,28 @@ function updateStopwatchButtons() {
 
   if (stopwatch.running) {
     pauseBtn.style.display = '';
-    if (stopwatch.half === 1) {
+    // Odd halves (1, 3, 5) use "Half End", Even halves (2, 4, 6) use "Match/Period End"
+    if (stopwatch.half % 2 !== 0) {
       halfBtn.style.display = '';
     } else {
       endBtn.style.display = '';
     }
   } else {
-    if (stopwatch.elapsed === 0 && stopwatch.half === 1 && !stopwatch.startTimestamp) {
-      // 初期状態：スタートボタンのみ
+    // Stopped/Paused
+    if (stopwatch.elapsed === 0 && !stopwatch.startTimestamp) {
+      // Before Start of a Period
       startBtn.style.display = '';
-    } else if (stopwatch.elapsed === 0 && stopwatch.half === 2) {
-      // 後半開始前
-      startBtn.style.display = '';
-      startBtn.textContent = '▶️ 後半スタート';
+      if (stopwatch.half === 1) startBtn.textContent = '▶️ 試合開始';
+      else if (stopwatch.half === 2) startBtn.textContent = '▶️ 後半開始';
+      else if (stopwatch.half === 3) startBtn.textContent = '▶️ 延長1前半開始';
+      else if (stopwatch.half === 4) startBtn.textContent = '▶️ 延長1後半開始';
+      else if (stopwatch.half === 5) startBtn.textContent = '▶️ 延長2前半開始';
+      else if (stopwatch.half === 6) startBtn.textContent = '▶️ 延長2後半開始';
+
     } else {
-      // 一時停止中
+      // Paused mid-game
       resumeBtn.style.display = '';
-      if (stopwatch.half === 1) {
+      if (stopwatch.half % 2 !== 0) {
         halfBtn.style.display = '';
       } else {
         endBtn.style.display = '';
@@ -1215,6 +1300,11 @@ function submitAction(result) {
   matchState.actions.push(newAction);
   matchState.stats = computeStats(matchState.actions);
 
+  // Auto-Stop Timer on Timeout
+  if (result === 'TimeOut') {
+    pauseStopwatch();
+  }
+
   saveData();
   updateScoreDisplay();
   renderHistory();
@@ -1446,6 +1536,126 @@ function initMatchMenu() {
   });
 }
 
+// ========================================
+// データ管理 (HTML Export)
+// ========================================
+document.getElementById('exportHtmlBtn').addEventListener('click', exportAnalysisHtml);
+
+async function exportAnalysisHtml() {
+  if (matchState.actions.length === 0) {
+    if (!confirm('データがありませんが、空の状態で書き出しますか？')) return;
+  }
+
+  const tournamentName = matchState.tournamentName || '';
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const filename = `${tournamentName ? `[${tournamentName}]_` : ''}Analysis_${dateStr}.html`;
+
+  // Get current styles
+  let cssContent = '';
+  try {
+    const response = await fetch('style.css');
+    if (!response.ok) throw new Error('Network response was not ok');
+    cssContent = await response.text();
+  } catch (e) {
+    console.warn('CSS fetch failed', e);
+    alert('【保存失敗】\nブラウザのセキュリティ制限により、このファイル（index.html）を直接開いている状態ではデザイン情報を読み込めません。\n\nGitHub PagesなどにアップロードしてWeb上で実行するか、ローカルサーバー経由で開いてください。');
+    return;
+  }
+
+  // Get current JS
+  let jsContent = '';
+  try {
+    const response = await fetch('app.js');
+    if (!response.ok) throw new Error('Network response was not ok');
+    jsContent = await response.text();
+  } catch (e) {
+    alert('【保存失敗】\nJSファイルの読み込みに失敗しました。\nWebサーバー上（GitHub Pages等）で実行してください。');
+    return;
+  }
+
+  // Current State
+  const jsonState = JSON.stringify(matchState);
+
+  // Construct HTML
+  const html = `
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${tournamentName} Analysis - ${dateStr}</title>
+    <style>
+      ${cssContent}
+      /* Overrides for Export View */
+      .screen { display: none !important; }
+      #analysisScreen { display: block !important; }
+      .layout-container { display: none; } /* Hide input layout if visible */
+      .nav-bar { display: none; } /* Hide navigation */
+      .export-area { display: none; } /* Hide export buttons */
+      .setup-form .form-group { display: none; } /* formatting if needed */
+    </style>
+</head>
+<body class="export-mode">
+    <!-- REUSE DOM STRUCTURE FROM ORIGINAL -->
+    ${document.getElementById('analysisScreen').outerHTML}
+
+    <!-- Hide other screens but keep structure if needed for JS ref, 
+         but ideally we only need analysisScreen. 
+         However, app.js might reference other IDs. 
+         Safest is to include the whole body content but hide irrelevant parts via CSS. -->
+    <div style="display:none;">
+      <!-- Hidden Elements to prevent JS errors if referenced -->
+      <div id="setupScreen"></div>
+      <div id="mainScreen"></div>
+      <div id="inputScreen"></div>
+      <!-- Add dummy buttons if app.js tries to bind them? 
+           We will handle this by a flag in JS. -->
+    </div>
+
+    <script>
+      window.isExported = true;
+      window.initialData = ${jsonState};
+    </script>
+    <script>
+      ${jsContent}
+    </script>
+</body>
+</html>
+  `;
+
+  // Download
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------
+// アプリ初期化 (Export Mode Check)
+// ---------------------------------------------------------
+// This should be at the very end or replacing 'init' call
+if (window.isExported) {
+  // EXPORT MODE INITIALIZATION
+  matchState = window.initialData;
+  // Initialize Stats & Graphs only
+  // Mock necessary UI elements if missing or just run render
+  window.onload = () => {
+    renderAnalysis();
+    // Update headers in analysis view
+    document.getElementById('headerOwnScoreAna').textContent = matchState.ownScore;
+    document.getElementById('headerOppScoreAna').textContent = matchState.oppScore;
+    // ... any other specific updates
+  };
+} else {
+  // NORMAL MODE
+  // Existing initialization usually happens via script load or window.onload
+  // app.js seems to run immediately.
+}
 // ========================================
 // メンバー編集モーダル制御
 // ========================================

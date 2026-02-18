@@ -404,6 +404,13 @@ body {
   color: #fff;
   letter-spacing: 1px;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.sticky-time:hover {
+  text-decoration: underline;
+  opacity: 0.8;
 }
 
 .sticky-period {
@@ -849,6 +856,13 @@ body {
   font-weight: 800;
   font-family: var(--font-mono);
   color: #fff;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.sw-time:hover {
+  opacity: 0.8;
+  text-decoration: underline;
 }
 
 .sw-period {
@@ -862,6 +876,28 @@ body {
   background: var(--accent-own);
   border-radius: 4px;
   color: #fff;
+}
+
+.stopwatch-half-badge {
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-own);
+  color: white;
+}
+
+.stopwatch-half-badge.second-half {
+  background: var(--accent-own);
+  /* Keep same or change */
+}
+
+.stopwatch-half-badge.ext-half {
+  background: #8b5cf6;
+  /* Violet for Extra Time */
+}
+
+.stopwatch-half-badge.finished {
+  background: var(--text-muted);
 }
 
 .sw-controls-mini {
@@ -1050,7 +1086,8 @@ body {
 /* DS, LS, BT -> Green */
 .sub-action-btn[data-sub="DS"],
 .sub-action-btn[data-sub="LS"],
-.sub-action-btn[data-sub="BT"] {
+.sub-action-btn[data-sub="BT"],
+.sub-action-btn[data-sub="PS"] {
   border-color: rgba(16, 185, 129, 0.6);
   color: #6ee7b7;
 }
@@ -1058,9 +1095,11 @@ body {
 .sub-action-btn[data-sub="DS"].active,
 .sub-action-btn[data-sub="LS"].active,
 .sub-action-btn[data-sub="BT"].active,
+.sub-action-btn[data-sub="PS"].active,
 .sub-action-btn[data-sub="DS"]:hover,
 .sub-action-btn[data-sub="LS"]:hover,
-.sub-action-btn[data-sub="BT"]:hover {
+.sub-action-btn[data-sub="BT"]:hover,
+.sub-action-btn[data-sub="PS"]:hover {
   background: rgba(16, 185, 129, 0.2);
   border-color: #10b981;
   color: #fff;
