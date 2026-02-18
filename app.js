@@ -1603,26 +1603,25 @@ async function exportAnalysisHtml() {
       ${cssContent}
       /* Overrides for Export View */
       .screen { display: none !important; }
-      #analysisScreen { display: block !important; }
-      .layout-container { display: none; } /* Hide input layout if visible */
-      .nav-bar { display: none; } /* Hide navigation */
-      .export-area { display: none; } /* Hide export buttons */
-      .setup-form .form-group { display: none; } /* formatting if needed */
+      #mainScreen { display: block !important; height: auto; overflow: visible; }
+      #inputView { display: none !important; }
+      #analysisView { display: block !important; }
+      .sticky-timer { display: none !important; }
+      .main-tabs { display: none !important; }
+      .nav-bar { display: none; }
+      .export-area { display: none; }
+      .setup-form .form-group { display: none; }
     </style>
 </head>
 <body class="export-mode">
     <!-- REUSE DOM STRUCTURE FROM ORIGINAL -->
-    ${document.getElementById('analysisScreen').outerHTML}
+    ${document.getElementById('mainScreen').outerHTML}
 
-    <!-- Hide other screens but keep structure if needed for JS ref, 
-         but ideally we only need analysisScreen. 
-         However, app.js might reference other IDs. 
-         Safest is to include the whole body content but hide irrelevant parts via CSS. -->
+    <!-- Hide other screens but keep structure if needed for JS ref. -->
     <div style="display:none;">
-      <!-- Hidden Elements to prevent JS errors if referenced -->
       <div id="setupScreen"></div>
-      <div id="mainScreen"></div>
-      <div id="inputScreen"></div>
+      <!-- mainScreen is already above -->
+      <div id="inputView"></div>
       <!-- Add dummy buttons if app.js tries to bind them? 
            We will handle this by a flag in JS. -->
     </div>
