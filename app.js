@@ -2454,3 +2454,176 @@ function initHeatmapEvents() {
     });
   }
 }
+
+// ========================================
+// PDFレポート出力機能
+// ========================================
+document.getElementById('exportPdfBtn').addEventListener('click', async () => {
+  document.getElementById('matchMenu').style.display = 'none';
+
+  try {
+    await generatePdfReport();
+  } catch (error) {
+    console.error('PDF generation failed:', error);
+    alert('PDFの出力に失敗しました。');
+  }
+});
+
+async function captureElementForPdf(pdf, containerEl, isFirstPage) {
+  // We don't use this function directly anymore.
+}
+
+async function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function generatePdfReport() {
+  const overlay = document.getElementById('pdfLoadingOverlay');
+  overlay.style.display = 'flex';
+
+  const originalMode = document.body.className;
+  document.body.classList.add('pdf-export-mode');
+
+  // Ensure Analysis View is visible
+  const analysisView = document.getElementById('analysisView');
+  const wasHidden = analysisView.style.display === 'none';
+  if (wasHidden) analysisView.style.display = 'block';
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  // Set first page background
+  pdf.setFillColor(10, 14, 26);
+  pdf.rect(0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(), 'F');
+
+  try {
+    const dashboardContent = document.getElementById('dashboardContent');
+    if (!dashboardContent) throw new Error("ダッシュボード要素が見つかりません");
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    const contentWidth = pdfWidth - margin * 2;
+    let currentY = margin;
+
+    // ヘッダー情報追加
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'pdf-header';
+    const tournament = matchState.tournamentName ? `[${matchState.tournamentName}] ` : '';
+    const dateStrFormatted = new Date().toLocaleDateString('ja-JP');
+    headerDiv.innerHTML = `
+      <div class="pdf-title">リアルタイム分析レポート</div>
+      <div class="pdf-subtitle">${tournament}${matchState.ownName} vs ${matchState.oppName} (${dateStrFormatted})</div>
+      <div style="font-size:1.5rem; margin-top:10px; color:#fff; font-weight:bold;">Score: ${matchState.stats.own.total.goals} - ${matchState.stats.opp.total.goals}</div>
+    `;
+    dashboardContent.insertBefore(headerDiv, dashboardContent.firstChild);
+
+    const captureAndAdd = async (el) => {
+      // グラフアニメーション描画待ち
+      await wait(300);
+      try {
+        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#0a0e1a', useCORS: true, logging: false });
+
+        if (canvas.width === 0 || canvas.height === 0) {
+          console.warn("Skipping 0x0 element:", el.className, el.id);
+          return;
+        }
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        if (imgData === 'data:,') {
+          console.warn("Skipping empty imgData for element:", el.className, el.id);
+          return;
+        }
+
+        const imgProps = pdf.getImageProperties(imgData);
+        const imgHeight = (imgProps.height * contentWidth) / imgProps.width;
+
+        if (currentY + imgHeight > pdfHeight - margin && currentY > margin) {
+          pdf.addPage();
+          pdf.setFillColor(10, 14, 26);
+          pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
+          currentY = margin;
+        }
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 8; // 下部マージン
+      } catch (e) {
+        console.warn("html2canvas capture failed for element:", el, e);
+      }
+    };
+
+    const children = Array.from(dashboardContent.children);
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (window.getComputedStyle(child).display === 'none') continue;
+
+      // チーム比較タブがあるセクションの場合、タブ切り替えでキャプチャ
+      const teamTabs = child.querySelector('#teamTabs');
+      if (teamTabs) {
+        const tabs = Array.from(teamTabs.querySelectorAll('.tab-btn'));
+        const totalTab = tabs.find(t => t.dataset.tab === 'total');
+        const firstTab = tabs.find(t => t.dataset.tab === 'first');
+        const secondTab = tabs.find(t => t.dataset.tab === 'second');
+
+        if (totalTab) { totalTab.click(); }
+        await captureAndAdd(child);
+
+        if (firstTab && matchState.actions.some(a => [1, 3, 5].includes(a.half))) {
+          firstTab.click();
+          await captureAndAdd(child);
+        }
+
+        if (secondTab && matchState.actions.some(a => [2, 4, 6].includes(a.half))) {
+          secondTab.click();
+          await captureAndAdd(child);
+        }
+
+        if (totalTab) totalTab.click(); // 復元
+        continue;
+      }
+
+      // ヒートマップセクションの場合、自チーム・相手チーム両方取る
+      if (child.querySelector('.heatmap-controls-top')) {
+        const teamSelect = document.getElementById('heatmapTeamSelect');
+
+        // 自チーム
+        teamSelect.value = 'Own';
+        teamSelect.dispatchEvent(new Event('change'));
+        await captureAndAdd(child);
+
+        // 相手チーム
+        teamSelect.value = 'Opp';
+        teamSelect.dispatchEvent(new Event('change'));
+        await captureAndAdd(child);
+
+        // 復元
+        teamSelect.value = 'Own';
+        teamSelect.dispatchEvent(new Event('change'));
+        continue;
+      }
+
+      // 通常のセクションやヘッダー
+      await captureAndAdd(child);
+    }
+
+    headerDiv.remove();
+
+    // 保存
+    const matchTitle = `${tournament}${matchState.ownName} vs ${matchState.oppName}`;
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `${matchTitle.replace(/ /g, '_')}_${dateStr}.pdf`;
+    pdf.save(filename);
+
+  } finally {
+    // 復元処理
+    document.body.classList.remove('pdf-export-mode');
+    if (originalMode) document.body.className = originalMode;
+    if (wasHidden) analysisView.style.display = 'none';
+
+    overlay.style.display = 'none';
+  }
+}
+

@@ -3142,3 +3142,77 @@ body {
     font-size: 1.6rem;
   }
 }
+
+/* =======================================
+   PDF レポート出力用スタイル (Redesign)
+   ======================================= */
+
+/* PDF生成中オーバーレイ */
+#pdfLoadingOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10, 14, 26, 0.95);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+}
+
+#pdfLoadingOverlay .pdf-spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+#pdfLoadingOverlay .pdf-loading-text {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* PDF撮影モードスタイル */
+body.pdf-export-mode {
+  /* キャプチャ時にスクロールバーを見せない */
+  overflow: hidden !important;
+}
+
+body.pdf-export-mode #dashboardContent {
+  width: 1200px !important;
+  /* PCビューレイアウトに固定。A4比率的に扱いやすい幅 */
+  max-width: none !important;
+  background: var(--bg-primary) !important;
+  padding: 20px !important;
+}
+
+body.pdf-export-mode .dashboard-header {
+  position: static !important;
+}
+
+/* スクロール要素を展開（見切れ防止） */
+body.pdf-export-mode .scoring-flow-scroll,
+body.pdf-export-mode .timeline-list {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* 不要なUIを隠す */
+body.pdf-export-mode .fab-btn,
+body.pdf-export-mode .match-menu,
+body.pdf-export-mode .setup-screen {
+  display: none !important;
+}

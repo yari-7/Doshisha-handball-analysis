@@ -14,6 +14,9 @@
         rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- PDF Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 
 <body>
@@ -452,7 +455,7 @@
 
         <!-- ===== 分析ビュー ===== -->
         <div class="view" id="analysisView" style="display:none;">
-            <div class="dashboard">
+            <div class="dashboard" id="dashboardContent">
 
                 <!-- KPI Cards -->
                 <div class="kpi-grid" id="kpiGrid"></div>
@@ -593,6 +596,7 @@
             <button class="menu-item" id="editMemberBtn">👥 メンバー編集</button>
             <button class="menu-item" id="newMatchBtn">🆕 新規試合</button>
             <button class="menu-item" id="exportBtn">📤 データ出力 (JSON)</button>
+            <button class="menu-item" id="exportPdfBtn">📄 レポート出力 (PDF)</button>
         </div>
     </div>
 
@@ -614,6 +618,12 @@
                 <button class="edit-btn-cancel" id="memberEditCloseBtn">閉じる</button>
             </div>
         </div>
+    </div>
+
+    <!-- PDF Loading Overlay -->
+    <div id="pdfLoadingOverlay" style="display: none;">
+        <div class="pdf-spinner"></div>
+        <div class="pdf-loading-text">PDFレポートを生成中...お待ちください</div>
     </div>
 
     <script src="app.js"></script>
