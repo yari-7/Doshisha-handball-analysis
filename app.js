@@ -32,7 +32,8 @@ let inputState = {
 
 
 
-const STORAGE_KEY = 'handball_realtime_match';
+const STORAGE_KEY = 'handball_realtime_match'; // Old key
+const INDEX_KEY = 'handball_match_index'; // New key for list of matches
 const TEAM_CONFIG_KEY = 'handball_team_config'; // New key for persistent team settings
 
 const DEFAULT_TEAM_CONFIG = {
@@ -54,6 +55,7 @@ const DEFAULT_TEAM_CONFIG = {
 
 // ===== グローバル状態 =====
 let matchState = {
+  id: null,
   ownName: '',
   oppName: '',
   players: [],       // [{no, name}] Own
@@ -65,7 +67,7 @@ let matchState = {
   halfDuration: 30,
   actions: [],
   stats: null,
-  startTime: Date.now()
+  startTime: null
 };
 
 
@@ -81,6 +83,8 @@ let stopwatch = {
 };
 
 let charts = {};
+let sessionInitialSnapshot = null;
+let isNewMatchSession = false;
 
 // ===== Chart.jsグローバル設定 =====
 // ===== Chart.jsグローバル設定 =====
@@ -92,14 +96,196 @@ if (typeof Chart !== 'undefined') {
 
 // ===== 初期化 =====
 document.addEventListener('DOMContentLoaded', () => {
+  initHomeScreen();
   initSetupScreen();
   initInputPanel();
   initStopwatchEvents();
   initHeatmapEvents();
   initMainTabs();
   initMatchMenu();
-  checkSavedData();
+  initMemberEdit();
+
+  migrateOldData();
+  showHomeScreen();
 });
+
+// ========================================
+// ホーム画面
+// ========================================
+function initHomeScreen() {
+  document.getElementById('homeNewMatchBtn').addEventListener('click', () => {
+    isNewMatchSession = true;
+    // 新規試合作成時は状態をリセット
+    document.getElementById('setupScreen').style.display = 'block';
+    document.getElementById('homeScreen').style.display = 'none';
+    matchState.id = `match_${Date.now()}`;
+  });
+
+  document.getElementById('setupBackBtn')?.addEventListener('click', () => {
+    document.getElementById('setupScreen').style.display = 'none';
+    showHomeScreen();
+  });
+
+  document.getElementById('headerHomeBtn')?.addEventListener('click', () => {
+    if (confirm('試合データを保存してホームに戻りますか？\\n（[キャンセル] を押すと、保存せずに破棄するか確認します）')) {
+      saveData();
+      document.getElementById('mainScreen').style.display = 'none';
+      showHomeScreen();
+    } else {
+      if (confirm('現在入力中の内容を【保存せずに破棄】して戻りますか？\\n（新規作成の場合は試合自体が取り消され、続きからの場合は開く前の状態に戻ります）')) {
+        if (isNewMatchSession) {
+          localStorage.removeItem(`handball_${matchState.id}`);
+          const index = getMatchIndex();
+          saveMatchIndex(index.filter(m => m.id !== matchState.id));
+        } else {
+          if (sessionInitialSnapshot) {
+            localStorage.setItem(`handball_${matchState.id}`, sessionInitialSnapshot);
+            const initialData = JSON.parse(sessionInitialSnapshot);
+            const ownScore = initialData.stats ? initialData.stats.own.Score : 0;
+            const oppScore = initialData.stats ? initialData.stats.opp.Score : 0;
+            const index = getMatchIndex();
+            const idx = index.findIndex(m => m.id === matchState.id);
+            if (idx >= 0) {
+              index[idx].scoreOwn = ownScore;
+              index[idx].scoreOpp = oppScore;
+              saveMatchIndex(index);
+            }
+          }
+        }
+        document.getElementById('mainScreen').style.display = 'none';
+        showHomeScreen();
+      }
+    }
+  });
+}
+
+function showHomeScreen() {
+  document.getElementById('mainScreen').style.display = 'none';
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('homeScreen').style.display = 'block';
+  renderMatchList();
+}
+
+function getMatchIndex() {
+  const idx = localStorage.getItem(INDEX_KEY);
+  return idx ? JSON.parse(idx) : [];
+}
+
+function saveMatchIndex(index) {
+  localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+}
+
+function migrateOldData() {
+  const oldDataStr = localStorage.getItem(STORAGE_KEY);
+  if (oldDataStr) {
+    try {
+      const data = JSON.parse(oldDataStr);
+      data.id = `match_migrated_${Date.now()}`;
+      localStorage.setItem(`handball_${data.id}`, JSON.stringify(data));
+
+      const index = getMatchIndex();
+      index.push({
+        id: data.id,
+        ownName: data.ownName,
+        oppName: data.oppName,
+        tournamentName: data.tournamentName || '',
+        date: new Date(data.startTime || Date.now()).toISOString(),
+        scoreOwn: data.stats ? data.stats.own.Score : 0,
+        scoreOpp: data.stats ? data.stats.opp.Score : 0
+      });
+      saveMatchIndex(index);
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      console.error('Migration failed', e);
+    }
+  }
+}
+
+function renderMatchList() {
+  const container = document.getElementById('matchListContainer');
+  const index = getMatchIndex();
+
+  if (index.length === 0) {
+    container.innerHTML = '<p class="setup-hint" style="text-align: center;">過去のデータはありません</p>';
+    return;
+  }
+
+  // 1. Group by tournamentName
+  const grouped = {};
+  index.forEach(match => {
+    const tName = match.tournamentName && match.tournamentName.trim() !== '' ? match.tournamentName : '未分類 (その他の試合)';
+    if (!grouped[tName]) {
+      grouped[tName] = [];
+    }
+    grouped[tName].push(match);
+  });
+
+  // 2. Sort groups (Uncategorized at the bottom, rest by latest match inside)
+  const groupArray = Object.keys(grouped).map(key => {
+    const matches = grouped[key];
+    matches.sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort matches inside group by date descending
+    return {
+      name: key,
+      matches: matches,
+      latestDate: new Date(matches[0].date).getTime()
+    };
+  });
+
+  groupArray.sort((a, b) => {
+    if (a.name === '未分類 (その他の試合)') return 1;
+    if (b.name === '未分類 (その他の試合)') return -1;
+    return b.latestDate - a.latestDate; // Latest folders first
+  });
+
+  // 3. Render HTML
+  let html = '';
+  groupArray.forEach((group, i) => {
+    // Generate matches HTML
+    const matchesHtml = group.matches.map(match => {
+      const d = new Date(match.date);
+      const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const title = `${match.ownName} vs ${match.oppName}`;
+
+      return `
+        <div class="match-list-item" onclick="resumeMatchById('${match.id}')">
+          <div class="match-item-title">${title}</div>
+          <div class="match-item-date">${dateStr}</div>
+          <div class="match-item-score">${match.scoreOwn} - ${match.scoreOpp}</div>
+        </div>
+      `;
+    }).join('');
+
+    // Folders are expanded by default if they are the first one, or if there's only one.
+    const isFirst = i === 0;
+    const collapseClass = isFirst ? '' : 'collapsed';
+
+    html += `
+      <div class="tournament-folder ${collapseClass}" id="folder-${i}">
+        <div class="tournament-header" onclick="toggleTournamentFolder(${i})">
+          <div class="folder-title-group">
+            <span class="folder-icon">📁</span>
+            <span class="folder-title">${group.name}</span>
+            <span class="folder-count">${group.matches.length}</span>
+          </div>
+          <span class="folder-icon-chevron">▼</span>
+        </div>
+        <div class="tournament-contents">
+          ${matchesHtml}
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function toggleTournamentFolder(index) {
+  const folder = document.getElementById(`folder-${index}`);
+  if (folder) {
+    folder.classList.toggle('collapsed');
+  }
+}
+window.toggleTournamentFolder = toggleTournamentFolder;
 
 // ========================================
 // 試合設定画面
@@ -277,25 +463,38 @@ function startMatch() {
   matchState.stats = computeStats([]);
   matchState.startTime = Date.now(); // Set start time
 
+  if (!matchState.id) {
+    matchState.id = `match_${Date.now()}`;
+  }
+
+  // indexに追加
+  const index = getMatchIndex();
+  const existingIdx = index.findIndex(m => m.id === matchState.id);
+  const matchInfo = {
+    id: matchState.id,
+    ownName: matchState.ownName,
+    oppName: matchState.oppName,
+    tournamentName: matchState.tournamentName || '',
+    date: new Date(matchState.startTime).toISOString(),
+    scoreOwn: 0,
+    scoreOpp: 0
+  };
+
+  if (existingIdx >= 0) {
+    index[existingIdx] = matchInfo;
+  } else {
+    index.push(matchInfo);
+  }
+  saveMatchIndex(index);
+
   saveData();
+  sessionInitialSnapshot = JSON.stringify(matchState);
   showMainScreen();
 }
 
 function checkSavedData() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return;
-
-  try {
-    const data = JSON.parse(saved);
-    const section = document.getElementById('resumeSection');
-    const info = document.getElementById('resumeInfo');
-    const s = data;
-    const tournament = s.tournamentName ? `[${s.tournamentName}] ` : '';
-    info.textContent = `${tournament}${s.ownName} vs ${s.oppName} (${s.actions.length}アクション) - ハーフ${s.halfDuration || 30} 分`;
-    section.style.display = 'block';
-  } catch (e) {
-    localStorage.removeItem(STORAGE_KEY);
-  }
+  // 過去のresumeSection表示ロジックは削除（ホーム画面のリストを使うため）
+  document.getElementById('resumeSection').style.display = 'none';
 }
 
 // ... (resumeMatch - no change needed as it rehydrates matchState directly) ...
@@ -317,9 +516,12 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
-function resumeMatch() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return;
+function resumeMatchById(id) {
+  const saved = localStorage.getItem(`handball_${id}`);
+  if (!saved) {
+    alert('データが見つかりません');
+    return;
+  }
 
   try {
     const data = JSON.parse(saved);
@@ -331,21 +533,23 @@ function resumeMatch() {
       delete data._stopwatch;
     }
     matchState = data; // 復元
+    sessionInitialSnapshot = JSON.stringify(matchState);
+    isNewMatchSession = false;
     matchState.stats = computeStats(matchState.actions);
 
     // Setup画面の入力値も復元（再設定時用）
     document.getElementById('ownTeamInput').value = matchState.ownName;
     document.getElementById('oppTeamInput').value = matchState.oppName;
-    if (matchState.ownGk) document.getElementById('ownGkInput').value = matchState.ownGk;
-    if (matchState.oppGk) document.getElementById('oppGkInput').value = matchState.oppGk;
-    if (matchState.halfDuration) document.getElementById('halfDurationInput').value = matchState.halfDuration;
+    if (matchState.tournamentName) document.getElementById('tournamentNameInput').value = matchState.tournamentName;
 
     showMainScreen();
   } catch (e) {
     alert('データの読み込みに失敗しました');
-    localStorage.removeItem(STORAGE_KEY);
+    console.error(e);
   }
 }
+// グローバル空間に公開してHTMLから叩けるようにする
+window.resumeMatchById = resumeMatchById;
 
 function showMainScreen() {
   document.getElementById('setupScreen').style.display = 'none';
@@ -389,6 +593,8 @@ function showMainScreen() {
 // データ永続化
 // ========================================
 function saveData() {
+  if (!matchState.id) return; // Prevent saving empty state
+
   const saveObj = { ...matchState };
   // ストップウォッチ状態も保存
   saveObj._stopwatch = {
@@ -396,7 +602,7 @@ function saveData() {
     half: stopwatch.half,
     finished: stopwatch.finished
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(saveObj));
+  localStorage.setItem(`handball_${matchState.id}`, JSON.stringify(saveObj));
 }
 
 // ========================================
@@ -837,7 +1043,7 @@ function getTimePeriodFromStopwatch() {
 
   const pStart = Math.floor(mins / 5) * 5;
   const pEnd = pStart + 5;
-  return `${String(pStart + offset).padStart(2, '0')} ~${String(pEnd + offset).padStart(2, '0')} `;
+  return `${String(pStart + offset).padStart(2, '0')}~${String(pEnd + offset).padStart(2, '0')}`;
 }
 
 function updateStopwatchDisplay() {
@@ -1196,6 +1402,9 @@ function submitAction(result) {
     matchState.actions.push({
       time: now,
       exactTime: exact,
+      half: stopwatch.half,
+      own_gk: matchState.ownGk,
+      opp_gk: matchState.oppGk,
       team: s1.team,
       no: s1.no,
       phase: s1.phase,
@@ -1215,6 +1424,9 @@ function submitAction(result) {
       matchState.actions.push({
         time: now,
         exactTime: exact,
+        half: stopwatch.half,
+        own_gk: matchState.ownGk,
+        opp_gk: matchState.oppGk,
         team: inputState.team === 'Own' ? 'Opp' : 'Own', // Opponent
         no: s2.no,
         phase: s1.phase,
@@ -1230,6 +1442,9 @@ function submitAction(result) {
     const ptAction = {
       time: now,
       exactTime: exact,
+      half: stopwatch.half,
+      own_gk: matchState.ownGk,
+      opp_gk: matchState.oppGk,
       team: inputState.team,
       no: inputState.playerNo,
       phase: inputState.phase,
@@ -1273,6 +1488,9 @@ function submitAction(result) {
     const sanctionAction = {
       time: now,
       exactTime: exact,
+      half: stopwatch.half,
+      own_gk: matchState.ownGk,
+      opp_gk: matchState.oppGk,
       team: inputState.team === 'Own' ? 'Opp' : 'Own', // Opposite team gets sanction
       no: inputState.sanctionPlayerNo,
       phase: inputState.phase,
@@ -1288,6 +1506,9 @@ function submitAction(result) {
   const newAction = {
     time: now,
     exactTime: exact,
+    half: stopwatch.half,
+    own_gk: matchState.ownGk,
+    opp_gk: matchState.oppGk,
     team: inputState.team,
     no: inputState.playerNo, // Can be null for TO
     phase: inputState.phase,
@@ -1346,6 +1567,17 @@ function updateScoreDisplay() {
     `${matchState.ownName}: 前半${s.own.first.goals} / 後半${s.own.second.goals}`;
   document.getElementById('headerHalfOpp').textContent =
     `${matchState.oppName}: 前半${s.opp.first.goals} / 後半${s.opp.second.goals}`;
+
+  // Update Index with latest score
+  if (matchState.id) {
+    const index = getMatchIndex();
+    const existingIdx = index.findIndex(m => m.id === matchState.id);
+    if (existingIdx >= 0) {
+      index[existingIdx].scoreOwn = ownScore;
+      index[existingIdx].scoreOpp = oppScore;
+      saveMatchIndex(index);
+    }
+  }
 }
 
 // ========================================
@@ -1541,21 +1773,41 @@ function initMatchMenu() {
 // ========================================
 // メンバー編集モーダル制御
 // ========================================
+let currentEditTeam = 'own';
+
+function initMemberEdit() {
+  document.getElementById('editTeamSelect').addEventListener('click', (e) => {
+    if (e.target.classList.contains('team-btn')) {
+      document.querySelectorAll('#editTeamSelect .team-btn').forEach(btn => btn.classList.remove('active'));
+      e.target.classList.add('active');
+      currentEditTeam = e.target.dataset.team;
+      renderEditRegisteredPlayers();
+    }
+  });
+}
+
 function openMemberEditModal() {
+  currentEditTeam = 'own';
+  document.querySelectorAll('#editTeamSelect .team-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelector('#editTeamSelect .team-btn[data-team="own"]').classList.add('active');
+
   renderEditRegisteredPlayers();
   document.getElementById('memberEditModalOverlay').style.display = 'flex';
 }
 
 function closeMemberEditModal() {
   document.getElementById('memberEditModalOverlay').style.display = 'none';
-  renderPlayerGrid(); // Update main input panel
+  renderPlayerGrid(); // Update main input panel for own team
+  initInputPanel();   // Re-init to update both team panels if opp team was edited
   saveTeamConfig();   // Persist changes
   saveData();         // Save current match state
 }
 
 function renderEditRegisteredPlayers() {
   const container = document.getElementById('editRegisteredPlayers');
-  container.innerHTML = matchState.players.map(p => `
+  const playersData = currentEditTeam === 'own' ? matchState.players : matchState.oppPlayers;
+
+  container.innerHTML = playersData.map(p => `
     <div class="registered-player">
       #${p.no}${p.name ? ` ${p.name}` : ''}
       <button class="remove-player" onclick="removeEditPlayer(${p.no})">✕</button>
@@ -1569,13 +1821,16 @@ function addEditPlayer() {
   const no = parseInt(noInput.value);
   if (!no || no < 1 || no > 99) return;
 
+  const targetArray = currentEditTeam === 'own' ? matchState.players : matchState.oppPlayers;
   const name = nameInput.value.trim();
-  if (matchState.players.some(p => p.no === no)) {
+
+  if (targetArray.some(p => p.no === no)) {
     alert('既に登録されている番号です');
     return;
   }
-  matchState.players.push({ no, name });
-  matchState.players.sort((a, b) => a.no - b.no);
+
+  targetArray.push({ no, name });
+  targetArray.sort((a, b) => a.no - b.no);
 
   renderEditRegisteredPlayers();
   noInput.value = '';
@@ -1585,7 +1840,11 @@ function addEditPlayer() {
 
 function removeEditPlayer(no) {
   if (confirm(`本当に #${no} を削除しますか？`)) {
-    matchState.players = matchState.players.filter(p => p.no !== no);
+    if (currentEditTeam === 'own') {
+      matchState.players = matchState.players.filter(p => p.no !== no);
+    } else {
+      matchState.oppPlayers = matchState.oppPlayers.filter(p => p.no !== no);
+    }
     renderEditRegisteredPlayers();
   }
 }
@@ -1630,12 +1889,23 @@ function computeStats(actions) {
     });
   });
 
-  const isFirstHalf = (t) => TIME_PERIODS_1ST.includes(t);
-
   actions.forEach(a => {
     const team = a.team === 'Own' ? 'own' : 'opp';
     const otherTeam = team === 'own' ? 'opp' : 'own';
-    const period = isFirstHalf(a.time) ? 'first' : 'second';
+
+    // a.half is 1,2 (regular), 3,4 (ext1), 5,6 (ext2)
+    // Map odds (1,3,5) into 'first' and evens (2,4,6) into 'second'
+    let period = 'first';
+
+    // Fallback for older data that doesn't have a.half recorded
+    if (a.half === undefined) {
+      if (!TIME_PERIODS_1ST.includes(a.time)) {
+        period = 'second';
+      }
+    } else if ([2, 4, 6].includes(a.half)) {
+      period = 'second';
+    }
+
     const isShotAction = SHOOT_TYPES.includes(a.action);
     const isTO = a.action === 'TO';
 
@@ -1860,7 +2130,7 @@ function renderTimeCharts() {
     options: {
       responsive: true,
       plugins: { title: { display: true, text: '時間帯別 攻撃回数', font: { size: 14, weight: '600' } }, legend: { position: 'bottom' } },
-      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+      scales: { y: { beginAtZero: true, suggestedMax: 5, ticks: { stepSize: 1 } } }
     }
   });
 

@@ -21,12 +21,34 @@
 
 <body>
 
-    <!-- ===== ① 試合設定画面 ===== -->
-    <div class="screen" id="setupScreen">
+    <!-- ===== ⓪ ホーム画面 (New!) ===== -->
+    <div class="screen" id="homeScreen">
         <div class="setup-container">
             <div class="setup-header">
-                <div class="setup-icon">🤾</div>
+                <div class="setup-icon">🏠</div>
                 <h1>リアルタイム試合分析</h1>
+                <p class="setup-subtitle">過去の試合を管理・新しい試合を開始</p>
+            </div>
+
+            <div class="home-card">
+                <button class="btn btn-start" id="homeNewMatchBtn" style="margin-bottom: 24px;">➕ 新しい試合を始める</button>
+
+                <h2 class="setup-section-title">🕒 過去の試合</h2>
+                <div id="matchListContainer" class="match-list">
+                    <!-- JSで動的に追加 -->
+                    <p class="setup-hint" style="text-align: center;">過去のデータはありません</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ① 試合設定画面 ===== -->
+    <div class="screen" id="setupScreen" style="display:none;">
+        <div class="setup-container">
+            <div class="setup-header" style="position: relative;">
+                <button id="setupBackBtn" class="btn btn-home-back">◀ ホーム</button>
+                <div class="setup-icon">🤾</div>
+                <h1>新規試合設定</h1>
                 <p class="setup-subtitle">試合設定を入力して開始</p>
             </div>
 
@@ -114,17 +136,6 @@
                 <button class="btn btn-start" id="startMatchBtn">🏟️ 試合開始</button>
             </div>
 
-            <!-- 途中復帰 -->
-            <div class="resume-section" id="resumeSection" style="display:none;">
-                <div class="resume-card">
-                    <div class="resume-title">📂 前回の試合データがあります</div>
-                    <div class="resume-info" id="resumeInfo"></div>
-                    <div class="resume-actions">
-                        <button class="btn btn-resume" id="resumeBtn">試合を再開</button>
-                        <button class="btn btn-reset" id="resetBtn">新規試合</button>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -134,6 +145,7 @@
         <!-- 固定ヘッダー -->
         <div class="main-header">
             <div class="main-header-top">
+                <button id="headerHomeBtn" class="btn-home-header">◀ ホーム</button>
                 <div class="header-team own" id="headerOwnName"></div>
                 <div class="header-score">
                     <span class="header-score-num own" id="headerOwnScore">0</span>
@@ -601,9 +613,13 @@
     </div>
 
     <!-- メンバー編集モーダル -->
-    <div class="modal-overlay" id="memberEditModalOverlay" style="display:none;">
+    <div class="edit-modal-overlay" id="memberEditModalOverlay" style="display:none;">
         <div class="edit-modal">
             <div class="edit-modal-header">メンバー編集</div>
+            <div class="team-select" id="editTeamSelect" style="margin-bottom: 12px;">
+                <button class="team-btn own active" data-team="own">自チーム</button>
+                <button class="team-btn opp" data-team="opp">相手チーム</button>
+            </div>
             <div class="setup-group">
                 <label>選手登録</label>
                 <div class="player-input-row">
