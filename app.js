@@ -96,6 +96,7 @@ let stopwatch = {
 let charts = {};
 let sessionInitialSnapshot = null;
 let isNewMatchSession = false;
+let isPrepareMode = false;
 
 // ===== Chart.jsグローバル設定 =====
 // ===== Chart.jsグローバル設定 =====
@@ -126,13 +127,25 @@ document.addEventListener('DOMContentLoaded', () => {
 function initHomeScreen() {
   document.getElementById('homeNewMatchBtn').addEventListener('click', () => {
     isNewMatchSession = true;
+    isPrepareMode = false;
     // 新規試合作成時は状態をリセット
     document.getElementById('setupScreen').style.display = 'block';
     document.getElementById('homeScreen').style.display = 'none';
     matchState.id = `match_${Date.now()}`;
+    updateSetupButtons();
+  });
+
+  document.getElementById('homePrepareMatchBtn').addEventListener('click', () => {
+    isNewMatchSession = true;
+    isPrepareMode = true;
+    document.getElementById('setupScreen').style.display = 'block';
+    document.getElementById('homeScreen').style.display = 'none';
+    matchState.id = `match_${Date.now()}`;
+    updateSetupButtons();
   });
 
   document.getElementById('setupBackBtn')?.addEventListener('click', () => {
+    isPrepareMode = false;
     document.getElementById('setupScreen').style.display = 'none';
     showHomeScreen();
   });
@@ -252,10 +265,24 @@ function renderMatchList() {
   let html = '';
   groupArray.forEach((group, i) => {
     // Generate matches HTML
+    // 事前準備済みの試合は別スタイルで表示
     const matchesHtml = group.matches.map(match => {
       const d = new Date(match.date);
       const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
       const title = `${match.ownName} vs ${match.oppName}`;
+
+      if (match.status === 'prepared') {
+        return `
+          <div class="match-list-item match-prepared" onclick="startPreparedMatch('${match.id}')">
+            <div class="match-item-info">
+              <div class="match-item-title">📋 ${title}</div>
+              <div class="match-item-date">事前準備済み</div>
+              <div class="match-item-score" style="color:#5eead4;">▶ タップで開始</div>
+            </div>
+            <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
+          </div>
+        `;
+      }
 
       return `
         <div class="match-list-item" onclick="resumeMatchById('${match.id}')">
@@ -328,13 +355,32 @@ function initSetupScreen() {
     oppNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addOppPlayer(); });
   }
 
-  startBtn.addEventListener('click', startMatch);
+  startBtn.addEventListener('click', () => {
+    if (isPrepareMode) {
+      prepareMatchSave();
+    } else {
+      startMatch();
+    }
+  });
 
   document.getElementById('resumeBtn')?.addEventListener('click', resumeMatch);
   document.getElementById('resetBtn')?.addEventListener('click', () => {
     localStorage.removeItem(STORAGE_KEY);
     document.getElementById('resumeSection').style.display = 'none';
   });
+}
+
+function updateSetupButtons() {
+  const startBtn = document.getElementById('startMatchBtn');
+  if (isPrepareMode) {
+    startBtn.textContent = '💾 保存（事前準備）';
+    startBtn.classList.add('btn-secondary');
+    startBtn.classList.remove('btn-start');
+  } else {
+    startBtn.textContent = '🏟️ 試合開始';
+    startBtn.classList.remove('btn-secondary');
+    startBtn.classList.add('btn-start');
+  }
 }
 
 function loadSavedTeamConfig() {
@@ -502,6 +548,98 @@ function startMatch() {
   saveMatchIndex(index);
 
   saveData();
+  sessionInitialSnapshot = JSON.stringify(matchState);
+  showMainScreen();
+}
+
+function prepareMatchSave() {
+  const ownName = document.getElementById('ownTeamInput').value.trim();
+  const oppName = document.getElementById('oppTeamInput').value.trim();
+
+  if (!ownName || !oppName) {
+    alert('チーム名を入力してください');
+    return;
+  }
+
+  // GK（任意）
+  const ownGk1 = parseInt(document.getElementById('ownGkInput1').value);
+  const ownGk2 = parseInt(document.getElementById('ownGkInput2').value);
+  const ownGk3 = parseInt(document.getElementById('ownGkInput3').value);
+  const ownGks = [ownGk1, ownGk2, ownGk3].filter(n => n && !isNaN(n));
+
+  const oppGk1 = parseInt(document.getElementById('oppGkInput1').value);
+  const oppGk2 = parseInt(document.getElementById('oppGkInput2').value);
+  const oppGk3 = parseInt(document.getElementById('oppGkInput3').value);
+  const oppGks = [oppGk1, oppGk2, oppGk3].filter(n => n && !isNaN(n));
+
+  const halfDuration = parseInt(document.getElementById('halfDurationInput').value) || 30;
+
+  matchState.ownName = ownName;
+  matchState.oppName = oppName;
+  matchState.tournamentName = document.getElementById('tournamentNameInput').value.trim();
+  matchState.ownGkList = ownGks;
+  matchState.oppGkList = oppGks;
+  matchState.ownGk = ownGks.length > 0 ? ownGks[0] : null;
+  matchState.oppGk = oppGks.length > 0 ? oppGks[0] : null;
+  matchState.halfDuration = halfDuration;
+  matchState.actions = [];
+  matchState.stats = computeStats([]);
+  matchState.startTime = Date.now();
+
+  if (!matchState.id) {
+    matchState.id = `match_${Date.now()}`;
+  }
+
+  // indexに追加（status: prepared）
+  const index = getMatchIndex();
+  const existingIdx = index.findIndex(m => m.id === matchState.id);
+  const matchInfo = {
+    id: matchState.id,
+    ownName: matchState.ownName,
+    oppName: matchState.oppName,
+    tournamentName: matchState.tournamentName || '',
+    date: new Date(matchState.startTime).toISOString(),
+    scoreOwn: 0,
+    scoreOpp: 0,
+    status: 'prepared'
+  };
+
+  if (existingIdx >= 0) {
+    index[existingIdx] = matchInfo;
+  } else {
+    index.push(matchInfo);
+  }
+  saveMatchIndex(index);
+  saveData();
+
+  isPrepareMode = false;
+  alert(`✅ 事前準備を保存しました！\n${ownName} vs ${oppName}\nホーム画面のフォルダから「▶ タップで開始」で試合を始められます。`);
+  showHomeScreen();
+}
+
+function startPreparedMatch(matchId) {
+  // 準備済み試合を読み込んで開始
+  const dataStr = localStorage.getItem(`handball_${matchId}`);
+  if (!dataStr) {
+    alert('データが見つかりません');
+    return;
+  }
+
+  const data = JSON.parse(dataStr);
+  Object.assign(matchState, data);
+  matchState.id = matchId;
+  matchState.startTime = Date.now(); // 開始時刻を更新
+
+  // indexのstatusをactiveに変更
+  const index = getMatchIndex();
+  const idx = index.findIndex(m => m.id === matchId);
+  if (idx >= 0) {
+    index[idx].status = 'active';
+    index[idx].date = new Date().toISOString();
+    saveMatchIndex(index);
+  }
+
+  isNewMatchSession = true;
   sessionInitialSnapshot = JSON.stringify(matchState);
   showMainScreen();
 }

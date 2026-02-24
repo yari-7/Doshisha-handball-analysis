@@ -387,6 +387,48 @@ body {
   transform: translateY(-1px);
 }
 
+.btn-secondary {
+  width: 100%;
+  padding: 14px;
+  font-size: 1rem;
+  background: rgba(13, 148, 136, 0.15);
+  border: 1px solid rgba(13, 148, 136, 0.4);
+  color: #5eead4;
+  border-radius: var(--radius-lg);
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover,
+.btn-secondary:active {
+  background: rgba(13, 148, 136, 0.3);
+  border-color: #0d9488;
+}
+
+.btn-outline {
+  width: 100%;
+  padding: 12px;
+  font-size: 0.9rem;
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: var(--text-secondary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-outline:hover,
+.btn-outline:active {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.match-prepared {
+  border-left: 3px solid #0d9488 !important;
+  background: rgba(13, 148, 136, 0.05) !important;
+}
+
 /* Registered players */
 .registered-players {
   display: flex;
