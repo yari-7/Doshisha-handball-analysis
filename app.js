@@ -248,9 +248,12 @@ function renderMatchList() {
 
       return `
         <div class="match-list-item" onclick="resumeMatchById('${match.id}')">
-          <div class="match-item-title">${title}</div>
-          <div class="match-item-date">${dateStr}</div>
-          <div class="match-item-score">${match.scoreOwn} - ${match.scoreOpp}</div>
+          <div class="match-item-info">
+            <div class="match-item-title">${title}</div>
+            <div class="match-item-date">${dateStr}</div>
+            <div class="match-item-score">${match.scoreOwn} - ${match.scoreOpp}</div>
+          </div>
+          <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
         </div>
       `;
     }).join('');
@@ -551,7 +554,23 @@ function resumeMatchById(id) {
 // グローバル空間に公開してHTMLから叩けるようにする
 window.resumeMatchById = resumeMatchById;
 
+function deleteMatchById(id) {
+  if (!confirm('この試合データを削除しますか？\nこの操作は取り消せません。')) return;
+
+  // localStorageから試合データを削除
+  localStorage.removeItem(`handball_${id}`);
+
+  // インデックスからも削除
+  const index = getMatchIndex();
+  saveMatchIndex(index.filter(m => m.id !== id));
+
+  // リストを再描画
+  renderMatchList();
+}
+window.deleteMatchById = deleteMatchById;
+
 function showMainScreen() {
+  document.getElementById('homeScreen').style.display = 'none';
   document.getElementById('setupScreen').style.display = 'none';
   document.getElementById('mainScreen').style.display = 'block';
 
@@ -698,10 +717,10 @@ function initInputPanel() {
         document.getElementById('courseSection').style.display = 'none';
         showTOResults();
       } else if (inputState.action === 'PS') {
-        // PS Logic -> Show Detail Selection
-        document.getElementById('courseSection').style.display = 'none';
-        document.getElementById('resultSection').style.display = 'none';
+        // PS Logic -> Show Detail Selection (optional) + Course & Results immediately
         document.getElementById('psDetailSection').style.display = 'block';
+        document.getElementById('courseSection').style.display = '';
+        showShootResults();
       } else {
         // Shoot actions: Show Course
         document.getElementById('courseSection').style.display = '';
@@ -711,17 +730,18 @@ function initInputPanel() {
     });
   });
 
-  // PS Detail Buttons
+  // PS Detail Buttons (toggle)
   document.querySelectorAll('.ps-detail-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.ps-detail-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      inputState.psDetail = btn.dataset.detail; // Block or Behind
-
-      // After selecting detail, show Course Section & Results
-      document.getElementById('courseSection').style.display = '';
-      showShootResults(); // Show Result Buttons (Goal/Save/etc)
-      document.querySelector('#courseSection').scrollIntoView({ behavior: 'smooth' });
+      if (btn.classList.contains('selected')) {
+        // 同じボタンを再度押したら選択解除
+        btn.classList.remove('selected');
+        inputState.psDetail = null;
+      } else {
+        document.querySelectorAll('.ps-detail-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        inputState.psDetail = btn.dataset.detail;
+      }
     });
   });
 
@@ -1284,8 +1304,7 @@ function showShootResults() {
     <button class="result-btn miss" data-result="Out">❌ Out</button>
     <button class="result-btn miss" data-result="Block">🛡️ Block</button>
     <div style="width:100%; height:1px; background:rgba(255,255,255,0.1); grid-column:span 2; margin:4px 0;"></div>
-    <button class="result-btn miss" data-result="PT_Ans_NoShot">No Shot (PT)</button>
-    <button class="result-btn pt-flow" data-result="PT_Ans_Out">7mスロー (PT)</button>
+    <button class="result-btn miss" data-result="PT_Ans_NoShot">7mスロー</button>
   `;
 
   grid.querySelectorAll('.result-btn').forEach(btn => {
@@ -1345,6 +1364,7 @@ function showTOResults() {
 
   grid.innerHTML = `
     <button class="result-btn miss" data-result="TM" data-memo="パスカット">パスカット</button>
+    <button class="result-btn miss" data-result="TM" data-memo="パスミス">パスミス</button>
     <button class="result-btn miss" data-result="TM" data-memo="キャッチミス">キャッチミス</button>
     <button class="result-btn miss" data-result="VL" data-memo="オーバーステップ">オーバーステップ</button>
     <button class="result-btn miss" data-result="VL" data-memo="ラインクロス">ラインクロス</button>
@@ -1601,7 +1621,7 @@ function renderHistory() {
     return `
       <div class="history-item">
         <span class="history-time">${a.exactTime || a.time}</span>
-        <span class="history-team ${teamClass}">${a.team === 'Own' ? 'O' : 'X'}</span>
+        <span class="history-team ${teamClass}">${a.team === 'Own' ? matchState.ownName.charAt(0) : matchState.oppName.charAt(0)}</span>
         <span class="history-no">${a.no ? '#' + a.no : '-'}</span>
         <span class="history-action">${a.action}</span>
         <span class="history-zone">${a.zone || ''}</span>
@@ -2455,7 +2475,7 @@ function renderTimeline() {
   renderTimelineItems('全て');
 }
 
-function renderTimelineItems(filter) {
+function renderTimelineItems(filter, forPdf = false) {
   const container = document.getElementById('timelineContainer');
   let actions = [...matchState.actions];
 
@@ -2469,7 +2489,25 @@ function renderTimelineItems(filter) {
     return;
   }
 
-  let html = `<div class="timeline-header" style="display:flex;gap:8px;">
+  // PDF用のインラインスタイル
+  const pS = forPdf ? {
+    header: 'color:#94a3b8;border-bottom:1px solid rgba(255,255,255,0.15);',
+    time: 'color:#e2e8f0;',
+    no: 'color:#f8fafc;font-weight:700;',
+    phase: 'color:#94a3b8;',
+    phaseFb: 'color:#60a5fa;font-weight:700;',
+    action: 'color:#f8fafc;font-weight:600;',
+    zone: 'color:#94a3b8;',
+    teamOwn: 'background:#2563eb;color:#fff;font-weight:700;',
+    teamOpp: 'background:#dc2626;color:#fff;font-weight:700;',
+    item: 'border-bottom:1px solid rgba(255,255,255,0.1);',
+    rGoal: 'background:rgba(16,185,129,0.4);color:#6ee7b7;font-weight:600;',
+    rSave: 'background:rgba(245,158,11,0.4);color:#fcd34d;font-weight:600;',
+    rBad: 'background:rgba(239,68,68,0.3);color:#fca5a5;font-weight:600;',
+    rOther: 'background:rgba(148,163,184,0.3);color:#e2e8f0;font-weight:600;',
+  } : { header: '', time: '', no: '', phase: '', phaseFb: '', action: '', zone: '', teamOwn: '', teamOpp: '', item: '', rGoal: '', rSave: '', rBad: '', rOther: '' };
+
+  let html = `<div class="timeline-header" style="display:flex;gap:8px;${pS.header}">
     <span style="min-width:44px">時間</span>
     <span style="min-width:36px">チーム</span>
     <span style="min-width:24px">No</span>
@@ -2482,15 +2520,22 @@ function renderTimelineItems(filter) {
   actions.forEach(a => {
     const teamClass = a.team === 'Own' ? 'own' : 'opp';
     const phaseClass = a.phase !== 'SetOF' ? 'fb-highlight' : '';
+    const teamStyle = a.team === 'Own' ? pS.teamOwn : pS.teamOpp;
+    const phaseStyle = phaseClass ? pS.phaseFb : pS.phase;
+    let resultStyle = pS.rOther;
+    if (a.result === 'Goal') resultStyle = pS.rGoal;
+    else if (a.result === 'Save') resultStyle = pS.rSave;
+    else if (a.result === 'Out' || a.result === 'Block') resultStyle = pS.rBad;
+
     html += `
-      <div class="timeline-item">
-        <span class="timeline-time-col">${a.time}</span>
-        <span class="timeline-team ${teamClass}">${a.team === 'Own' ? 'O' : 'X'}</span>
-        <span class="timeline-no">#${a.no}</span>
-        <span class="timeline-phase ${phaseClass}">${a.phase}</span>
-        <span class="timeline-action-col">${a.action}</span>
-        <span class="timeline-zone-col">${a.zone || ''}</span>
-        <span class="timeline-result-col ${a.result}">${a.result}</span>
+      <div class="timeline-item" style="${pS.item}">
+        <span class="timeline-time-col" style="${pS.time}">${a.time}</span>
+        <span class="timeline-team ${teamClass}" style="${teamStyle}">${a.team === 'Own' ? matchState.ownName.charAt(0) : matchState.oppName.charAt(0)}</span>
+        <span class="timeline-no" style="${pS.no}">#${a.no}</span>
+        <span class="timeline-phase ${phaseClass}" style="${phaseStyle}">${a.phase}</span>
+        <span class="timeline-action-col" style="${pS.action}">${a.action}</span>
+        <span class="timeline-zone-col" style="${pS.zone}">${a.zone || ''}</span>
+        <span class="timeline-result-col ${a.result}" style="${resultStyle}">${a.result}</span>
       </div>`;
   });
 
@@ -2531,9 +2576,8 @@ function renderScoringFlow() {
     return;
   }
 
-  // Set canvas width based on data points
-  const minWidth = Math.max(600, goalActions.length * 60);
-  canvas.style.width = minWidth + 'px';
+  // Canvas幅は親コンテナに合わせる（responsive: trueで自動調整）
+  canvas.style.width = '100%';
 
   if (charts.scoringFlow) charts.scoringFlow.destroy();
   charts.scoringFlow = new Chart(canvas, {
@@ -2566,8 +2610,8 @@ function renderScoringFlow() {
       ]
     },
     options: {
-      responsive: false,
-      maintainAspectRatio: false,
+      responsive: true,
+      maintainAspectRatio: true,
       plugins: {
         title: { display: true, text: '得点の流れ', font: { size: 14, weight: '600' } },
         legend: { position: 'bottom' }
@@ -2855,23 +2899,116 @@ async function generatePdfReport() {
         continue;
       }
 
-      // ヒートマップセクションの場合、自チーム・相手チーム両方取る
+      // ヒートマップセクションの場合、全シュートタイプ × 自チーム・相手チーム
       if (child.querySelector('.heatmap-controls-top')) {
         const teamSelect = document.getElementById('heatmapTeamSelect');
+        const tabContainer = document.getElementById('heatmapActionTabs');
+        const actionTabs = tabContainer ? Array.from(tabContainer.querySelectorAll('.tab-btn')) : [];
+        const shootActions = ['DS', 'LS', 'WS', 'BT', 'PS', 'PT'];
+        const savedAction = currentHeatmapAction;
 
-        // 自チーム
-        teamSelect.value = 'Own';
-        teamSelect.dispatchEvent(new Event('change'));
-        await captureAndAdd(child);
+        for (const action of shootActions) {
+          // アクションタブ切り替え
+          currentHeatmapAction = action;
+          actionTabs.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.action === action);
+          });
 
-        // 相手チーム
-        teamSelect.value = 'Opp';
-        teamSelect.dispatchEvent(new Event('change'));
-        await captureAndAdd(child);
+          // 自チーム
+          teamSelect.value = 'Own';
+          teamSelect.dispatchEvent(new Event('change'));
+          renderHeatmap();
+          await captureAndAdd(child);
+
+          // 相手チーム
+          teamSelect.value = 'Opp';
+          teamSelect.dispatchEvent(new Event('change'));
+          renderHeatmap();
+          await captureAndAdd(child);
+        }
 
         // 復元
+        currentHeatmapAction = savedAction;
+        actionTabs.forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.action === savedAction);
+        });
         teamSelect.value = 'Own';
         teamSelect.dispatchEvent(new Event('change'));
+        renderHeatmap();
+        continue;
+      }
+
+      // アクションタイムラインセクション：独立DOMを生成してキャプチャ
+      const timelineFiltersEl = child.querySelector('#timelineFilters');
+      if (timelineFiltersEl) {
+        const filterValues = ['全て', 'Own', 'Opp', 'Goal', 'TO'];
+        const filterLabels = { '全て': '全て', 'Own': matchState.ownName, 'Opp': matchState.oppName, 'Goal': 'Goal', 'TO': 'TO' };
+
+        for (const filterVal of filterValues) {
+          let actions = [...matchState.actions];
+          if (filterVal === 'Own') actions = actions.filter(a => a.team === 'Own');
+          else if (filterVal === 'Opp') actions = actions.filter(a => a.team === 'Opp');
+          else if (filterVal === 'Goal') actions = actions.filter(a => a.result === 'Goal');
+          else if (filterVal === 'TO') actions = actions.filter(a => a.action === 'TO');
+
+          // フィルタータブHTML
+          const tabsHtml = filterValues.map(f => {
+            const isActive = f === filterVal;
+            const label = filterLabels[f];
+            const tabStyle = isActive
+              ? 'padding:6px 16px;border-radius:20px;border:1px solid #3b82f6;background:rgba(59,130,246,0.2);color:#93c5fd;font-weight:700;font-size:0.85rem;cursor:pointer;'
+              : 'padding:6px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:#94a3b8;font-weight:500;font-size:0.85rem;cursor:pointer;';
+            return `<span style="${tabStyle}">${label}</span>`;
+          }).join('');
+
+          // タイムライン行HTML
+          let rowsHtml = '';
+          if (actions.length === 0) {
+            rowsHtml = '<div style="color:#64748b;padding:20px;text-align:center;">データなし</div>';
+          } else {
+            rowsHtml = `<div style="display:flex;gap:8px;font-weight:700;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:10px;margin-bottom:8px;">
+              <span style="min-width:44px">時間</span><span style="min-width:36px">チーム</span><span style="min-width:24px">No</span>
+              <span style="min-width:48px">フェーズ</span><span style="min-width:28px">種別</span><span style="min-width:16px">Z</span><span>結果</span>
+            </div>`;
+            actions.forEach(a => {
+              const teamBg = a.team === 'Own' ? 'background:#2563eb;color:#fff;' : 'background:#dc2626;color:#fff;';
+              const phaseColor = a.phase !== 'SetOF' ? 'color:#60a5fa;font-weight:700;' : 'color:#94a3b8;';
+              let resultStyle = 'background:rgba(148,163,184,0.3);color:#e2e8f0;';
+              if (a.result === 'Goal') resultStyle = 'background:rgba(16,185,129,0.4);color:#6ee7b7;';
+              else if (a.result === 'Save') resultStyle = 'background:rgba(245,158,11,0.4);color:#fcd34d;';
+              else if (a.result === 'Out' || a.result === 'Block') resultStyle = 'background:rgba(239,68,68,0.3);color:#fca5a5;';
+              rowsHtml += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);">
+                <span style="font-family:monospace;color:#e2e8f0;font-size:0.72rem;min-width:44px;">${a.time}</span>
+                <span style="font-weight:700;min-width:36px;padding:2px 6px;border-radius:4px;text-align:center;font-size:0.7rem;${teamBg}">${a.team === 'Own' ? matchState.ownName.charAt(0) : matchState.oppName.charAt(0)}</span>
+                <span style="font-weight:700;font-family:monospace;min-width:24px;color:#f8fafc;">#${a.no}</span>
+                <span style="font-size:0.7rem;min-width:48px;${phaseColor}">${a.phase}</span>
+                <span style="font-weight:600;min-width:28px;color:#f8fafc;">${a.action}</span>
+                <span style="color:#94a3b8;min-width:16px;">${a.zone || ''}</span>
+                <span style="padding:2px 10px;border-radius:4px;font-weight:600;font-size:0.75rem;${resultStyle}">${a.result}</span>
+              </div>`;
+            });
+          }
+
+          // 独立したDOMノードを作成
+          const standalone = document.createElement('div');
+          standalone.style.cssText = 'position:absolute;left:0;top:0;width:1200px;background:#0a0e1a;padding:20px;z-index:99999;font-family:Inter,sans-serif;color:#f1f5f9;';
+          standalone.innerHTML = `
+            <div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:#f1f5f9;">
+              <span style="font-size:1.2rem;">⏱️</span>アクションタイムライン
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:16px;">${tabsHtml}</div>
+            <div style="padding:16px;background:#0f1629;border:1px solid rgba(255,255,255,0.2);border-radius:12px;">${rowsHtml}</div>
+          `;
+          document.body.appendChild(standalone);
+          await captureAndAdd(standalone);
+          standalone.remove();
+        }
+
+        // 元のUIのフィルター復元
+        timelineFiltersEl.querySelectorAll('.timeline-filter-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.filter === '全て');
+        });
+        renderTimelineItems('全て');
         continue;
       }
 
