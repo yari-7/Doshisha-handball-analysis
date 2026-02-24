@@ -235,9 +235,9 @@
                     </div>
                 </div>
 
-                <!-- PLAYER SELECTION (Moved here) -->
-                <div class="bottom-player-area" style="margin-top: 4px;">
-                    <div class="player-label">選手:</div>
+                <!-- PLAYER SELECTION (チーム選択のすぐ下に配置) -->
+                <div class="player-area-prominent">
+                    <div class="player-label-prominent">選手番号</div>
                     <div class="player-scroll-container">
                         <div class="player-grid" id="playerGrid"></div>
                     </div>
@@ -658,12 +658,12 @@
 
     <script src="app.js"></script>
     <script>
-      // Service Worker登録
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js')
-          .then(() => console.log('SW registered'))
-          .catch(err => console.log('SW registration failed:', err));
-      }
+        // Service Worker登録
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js')
+                .then(() => console.log('SW registered'))
+                .catch(err => console.log('SW registration failed:', err));
+        }
     </script>
 </body>
 

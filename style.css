@@ -1473,22 +1473,24 @@ body {
   height: 60px;
 }
 
-.bottom-player-area {
-  flex: 1;
+.player-area-prominent {
   background: var(--bg-card);
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-glass);
+  border: 2px solid rgba(59, 130, 246, 0.3);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   overflow: hidden;
+  margin: 6px 0;
 }
 
-.player-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
+.player-label-prominent {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #60a5fa;
   white-space: nowrap;
+  letter-spacing: 0.5px;
 }
 
 .player-scroll-container {
@@ -1503,9 +1505,9 @@ body {
 }
 
 .player-btn {
-  width: 36px;
-  height: 36px;
-  font-size: 0.9rem;
+  width: 40px;
+  height: 40px;
+  font-size: 0.95rem;
   flex-shrink: 0;
 }
 
