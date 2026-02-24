@@ -4,9 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>リアルタイム ハンドボール分析</title>
-    <meta name="description" content="ハンドボールの試合中にリアルタイムでデータを入力し、分析結果を即座に確認できるダッシュボード">
+    <title>ハンドボール分析</title>
+    <meta name="description" content="ハンドボールの試合データを入力・分析できるダッシュボード">
     <meta name="robots" content="noindex, nofollow">
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0a0e1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="HB分析">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -27,8 +34,8 @@
     <div class="screen" id="homeScreen">
         <div class="setup-container">
             <div class="setup-header">
-                <div class="setup-icon">🏠</div>
-                <h1>リアルタイム試合分析</h1>
+                <div class="setup-icon">🤾</div>
+                <h1>ハンドボール分析</h1>
                 <p class="setup-subtitle">過去の試合を管理・新しい試合を開始</p>
             </div>
 
@@ -52,7 +59,6 @@
         <div class="setup-container">
             <div class="setup-header" style="position: relative;">
                 <button id="setupBackBtn" class="btn btn-home-back">◀ ホーム</button>
-                <div class="setup-icon">🤾</div>
                 <h1>新規試合設定</h1>
                 <p class="setup-subtitle">試合設定を入力して開始</p>
             </div>
@@ -649,6 +655,14 @@
     </div>
 
     <script src="app.js"></script>
+    <script>
+      // Service Worker登録
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js')
+          .then(() => console.log('SW registered'))
+          .catch(err => console.log('SW registration failed:', err));
+      }
+    </script>
 </body>
 
 </html>

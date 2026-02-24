@@ -1929,6 +1929,34 @@ body {
   font-size: 0.85rem;
 }
 
+.history-insert-row {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
+  margin: 0;
+}
+
+.history-insert-btn {
+  background: rgba(13, 148, 136, 0.1);
+  border: 1px dashed rgba(13, 148, 136, 0.4);
+  color: #5eead4;
+  font-size: 12px;
+  width: 32px;
+  height: 18px;
+  line-height: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.history-insert-btn:active {
+  background: rgba(13, 148, 136, 0.4);
+  border-color: #0d9488;
+  color: #fff;
+  transform: scale(1.15);
+}
+
 .history-edit {
   width: 24px;
   height: 24px;

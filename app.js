@@ -25,8 +25,19 @@ let inputState = {
   zone: null,
   course: null,
   psDetail: null, // New State for PS Detail
-  pendingResult: null
+  pendingResult: null,
+  insertAtIndex: null // null=末尾追加, 数値=その位置に挿入
 };
+
+// アクション追加ヘルパー（挿入モード対応）
+function addActionToList(action) {
+  if (inputState.insertAtIndex != null) {
+    matchState.actions.splice(inputState.insertAtIndex, 0, action);
+    inputState.insertAtIndex++; // 複数挿入時に位置をずらす
+  } else {
+    matchState.actions.push(action);
+  }
+}
 
 // ... (existing code)
 
@@ -1277,6 +1288,7 @@ function resetActionSelection() {
   inputState.sanction = null;
   inputState.sanctionPlayerNo = null;
   inputState.sequenceData = null; // Clear sequence data
+  cancelInsertMode(); // 挿入モード解除
 
   // Clear sub-active states
   document.querySelectorAll('.fixed-btn').forEach(b => b.classList.remove('active-sub'));
@@ -1419,7 +1431,7 @@ function submitAction(result) {
     const s2 = inputState.sequenceData.step2;
 
     // 1. Previous Action (e.g. BT -> Out/PT獲得)
-    matchState.actions.push({
+    addActionToList({
       time: now,
       exactTime: exact,
       half: stopwatch.half,
@@ -1441,7 +1453,7 @@ function submitAction(result) {
     // If "ライン内防御", maybe skip ②?
     // Let's assume we record if it's Warning/suspension/DQ.
     if (s2 && ['警告', '退場', '失格'].includes(s2.action) && s2.no) {
-      matchState.actions.push({
+      addActionToList({
         time: now,
         exactTime: exact,
         half: stopwatch.half,
@@ -1474,7 +1486,7 @@ function submitAction(result) {
       result: result,
       memo: null
     };
-    matchState.actions.push(ptAction);
+    addActionToList(ptAction);
 
     // Complete Batch
     matchState.stats = computeStats(matchState.actions);
@@ -1520,7 +1532,7 @@ function submitAction(result) {
       result: inputState.sanction, // Result is the sanction itself usually
       memo: 'PTに伴う罰則'
     };
-    matchState.actions.push(sanctionAction);
+    addActionToList(sanctionAction);
   }
 
   const newAction = {
@@ -1539,7 +1551,7 @@ function submitAction(result) {
     memo: inputState.pendingMemo || null // Save memo if exists (for TO details)
   };
 
-  matchState.actions.push(newAction);
+  addActionToList(newAction);
   matchState.stats = computeStats(matchState.actions);
 
   // Auto-Stop Timer on Timeout
@@ -1615,10 +1627,14 @@ function renderHistory() {
   }
 
   // 古い順（試合開始が上）
-  list.innerHTML = actions.map((a, i) => {
+  let html = '';
+  actions.forEach((a, i) => {
+    // 挿入ボタン（各アイテムの前に配置）
+    html += `<div class="history-insert-row"><button class="history-insert-btn" onclick="insertActionAt(${i})" title="ここに挿入">＋</button></div>`;
+
     const teamClass = a.team === 'Own' ? 'own' : 'opp';
     const memoHtml = a.memo ? `<span class="history-memo">(${a.memo})</span>` : '';
-    return `
+    html += `
       <div class="history-item">
         <span class="history-time">${a.exactTime || a.time}</span>
         <span class="history-team ${teamClass}">${a.team === 'Own' ? matchState.ownName.charAt(0) : matchState.oppName.charAt(0)}</span>
@@ -1634,10 +1650,45 @@ function renderHistory() {
         </span>
       </div>
     `;
-  }).join('');
+  });
+  // 最後の挿入ボタン（最末尾への追加用は不要 — 普通の入力で末尾追加できるため）
+
+  list.innerHTML = html;
 
   // 最新のアクションが見えるよう自動スクロール
   list.scrollTop = list.scrollHeight;
+}
+
+function insertActionAt(index) {
+  inputState.insertAtIndex = index;
+
+  // 挿入モード表示
+  let banner = document.getElementById('insertModeBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'insertModeBanner';
+    banner.style.cssText = 'background:#0d9488;color:#fff;text-align:center;padding:8px 16px;font-size:14px;font-weight:600;position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;border-radius:8px;margin:8px 0;';
+    const mainTab = document.querySelector('.main-tab-bar') || document.querySelector('.input-panel');
+    if (mainTab) mainTab.parentNode.insertBefore(banner, mainTab.nextSibling);
+    else document.body.prepend(banner);
+  }
+  banner.innerHTML = `<span>📌 挿入モード：アクション #${index + 1} の前に追加</span><button onclick="cancelInsertMode()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;padding:4px 12px;border-radius:6px;font-size:13px;cursor:pointer;">✕ 解除</button>`;
+  banner.style.display = 'flex';
+
+  // 入力タブに切り替え
+  document.querySelectorAll('.main-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.view === 'input');
+  });
+  document.getElementById('inputView').style.display = '';
+  document.getElementById('inputView').classList.add('active');
+  document.getElementById('analysisView').style.display = 'none';
+  document.getElementById('analysisView').classList.remove('active');
+}
+
+function cancelInsertMode() {
+  inputState.insertAtIndex = null;
+  const banner = document.getElementById('insertModeBanner');
+  if (banner) banner.style.display = 'none';
 }
 
 function deleteAction(index) {
