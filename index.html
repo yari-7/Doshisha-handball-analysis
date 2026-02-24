@@ -17,6 +17,8 @@
     <!-- PDF Export Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Excel Import Library -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
 
 <body>
@@ -31,7 +33,10 @@
             </div>
 
             <div class="home-card">
-                <button class="btn btn-start" id="homeNewMatchBtn" style="margin-bottom: 24px;">➕ 新しい試合を始める</button>
+                <button class="btn btn-start" id="homeNewMatchBtn" style="margin-bottom: 12px;">➕ 新しい試合を始める</button>
+                <button class="btn btn-outline" id="importExcelBtn" style="margin-bottom: 24px;">📥 Excelデータ読込
+                    (.xlsm/.xls/.xlsx)</button>
+                <input type="file" id="excelFileInput" accept=".xlsx,.xlsm,.xls" style="display:none;">
 
                 <h2 class="setup-section-title">🕒 過去の試合</h2>
                 <div id="matchListContainer" class="match-list">
@@ -609,6 +614,7 @@
             <button class="menu-item" id="newMatchBtn">🆕 新規試合</button>
             <button class="menu-item" id="exportBtn">📤 データ出力 (JSON)</button>
             <button class="menu-item" id="exportPdfBtn">📄 レポート出力 (PDF)</button>
+            <button class="menu-item" id="exportCsvBtn">📊 データ出力 (CSV)</button>
         </div>
     </div>
 

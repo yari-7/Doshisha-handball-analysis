@@ -2558,7 +2558,7 @@ function renderScoringFlow() {
       if (a.team === 'Own') ownScore++;
       else oppScore++;
       goalActions.push({
-        label: `${a.time} #${a.no}`,
+        label: `${a.time}`,
         own: ownScore,
         opp: oppScore,
         team: a.team
@@ -2783,9 +2783,248 @@ document.getElementById('exportPdfBtn').addEventListener('click', async () => {
   }
 });
 
-async function captureElementForPdf(pdf, containerEl, isFirstPage) {
-  // We don't use this function directly anymore.
+// ===== CSV エクスポート =====
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  document.getElementById('matchMenu').style.display = 'none';
+
+  if (!matchState.actions || matchState.actions.length === 0) {
+    alert('エクスポートするデータがありません。');
+    return;
+  }
+
+  try {
+    exportCsv();
+  } catch (error) {
+    console.error('CSV export failed:', error);
+    alert('CSVの出力に失敗しました。');
+  }
+});
+
+function exportCsv() {
+  const headers = ['時間', '正確な時間', '前後半', 'チーム', 'チーム名', '背番号', 'フェーズ', 'アクション', 'ゾーン', 'コース', '結果', '備考', '自GK', '相手GK'];
+
+  const rows = matchState.actions.map(a => {
+    const teamName = a.team === 'Own' ? matchState.ownName : matchState.oppName;
+    const halfLabel = a.half === 1 ? '前半' : '後半';
+    return [
+      a.time || '',
+      a.exactTime || '',
+      halfLabel,
+      a.team || '',
+      teamName,
+      a.no != null ? a.no : '',
+      a.phase || '',
+      a.action || '',
+      a.zone || '',
+      a.course || '',
+      a.result || '',
+      a.memo || '',
+      a.own_gk != null ? a.own_gk : '',
+      a.opp_gk != null ? a.opp_gk : ''
+    ];
+  });
+
+  // Excel用HTMLテーブル形式で.xlsファイルを生成
+  const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  let tableHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><style>td,th{mso-number-format:'\\@';}</style></head><body><table>`;
+
+  // ヘッダー行
+  tableHtml += '<tr>' + headers.map(h => `<th style="background:#2563eb;color:#fff;font-weight:bold;padding:6px 12px;border:1px solid #93c5fd;">${esc(h)}</th>`).join('') + '</tr>';
+
+  // データ行
+  rows.forEach((row, i) => {
+    const bgColor = i % 2 === 0 ? '#f8fafc' : '#e2e8f0';
+    tableHtml += '<tr>' + row.map(val => `<td style="padding:4px 10px;border:1px solid #cbd5e1;background:${bgColor};">${esc(val)}</td>`).join('') + '</tr>';
+  });
+
+  tableHtml += '</table></body></html>';
+
+  // ダウンロード (.xls形式)
+  const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const tournament = matchState.tournamentName ? `[${matchState.tournamentName}]_` : '';
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  a.href = url;
+  a.download = `${tournament}${matchState.ownName}_vs_${matchState.oppName}_${dateStr}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
+
+// ===== Excel インポート =====
+document.getElementById('importExcelBtn').addEventListener('click', () => {
+  document.getElementById('excelFileInput').click();
+});
+
+document.getElementById('excelFileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      importExcelFile(evt.target.result, file.name);
+    } catch (error) {
+      console.error('Excel import failed:', error);
+      alert('Excelの読み込みに失敗しました: ' + error.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  // 同じファイルを再選択できるようリセット
+  e.target.value = '';
+});
+
+function importExcelFile(data, fileName) {
+  const wb = XLSX.read(data, { type: 'array' });
+
+  // 1. Dataシートを探す
+  const dataSheetName = wb.SheetNames.find(n => n === 'Data') || wb.SheetNames[0];
+  const ws = wb.Sheets[dataSheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+  // ヘッダー行を探す (Time, Team, No., Phase, Action, Zone, Result...)
+  let headerRowIdx = -1;
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const row = rows[i];
+    if (row && row.some(v => v === 'Time') && row.some(v => v === 'Team')) {
+      headerRowIdx = i;
+      break;
+    }
+  }
+  if (headerRowIdx === -1) {
+    throw new Error('Dataシートにヘッダー行（Time, Team...）が見つかりません');
+  }
+
+  const headers = rows[headerRowIdx];
+  const colIdx = {};
+  headers.forEach((h, i) => { if (h) colIdx[String(h).trim()] = i; });
+
+  // 必須カラム確認
+  if (colIdx['Time'] === undefined || colIdx['Team'] === undefined) {
+    throw new Error('必須カラム(Time, Team)が見つかりません');
+  }
+
+  // 2. アクションデータを変換
+  const actions = [];
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || (!row[colIdx['Time']] && !row[colIdx['Team']])) continue;
+
+    const team = row[colIdx['Team']];
+    if (team !== 'Own' && team !== 'Opp') continue;
+
+    const timeRaw = String(row[colIdx['Time']] || '').replace(/～/g, '~');
+    const no = row[colIdx['No.']] != null ? row[colIdx['No.']] : null;
+    const phase = row[colIdx['Phase']] || 'SetOF';
+    const action = row[colIdx['Action']] || '';
+    const zone = row[colIdx['Zone']] || '';
+    const result = row[colIdx['Result']] || '';
+    const ownGk = row[colIdx['Own_GK']] != null ? row[colIdx['Own_GK']] : null;
+    const oppGk = row[colIdx['Opp_GK']] != null ? row[colIdx['Opp_GK']] : null;
+
+    // 前後半判定（時間帯から）
+    let half = 1;
+    const timeStart = parseInt(timeRaw);
+    if (!isNaN(timeStart) && timeStart >= 30) half = 2;
+
+    actions.push({
+      time: timeRaw,
+      exactTime: '',
+      team: team,
+      no: no,
+      phase: phase,
+      action: action,
+      zone: zone,
+      course: '',
+      result: result,
+      memo: '',
+      half: half,
+      own_gk: ownGk,
+      opp_gk: oppGk
+    });
+  }
+
+  if (actions.length === 0) {
+    throw new Error('読み込めるアクションデータがありませんでした');
+  }
+
+  // 3. Personalシートからメンバー取得
+  let ownMembers = [];
+  let oppMembers = [];
+  const personalSheet = wb.SheetNames.find(n => n === 'Personal');
+  if (personalSheet) {
+    const pws = wb.Sheets[personalSheet];
+    const pRows = XLSX.utils.sheet_to_json(pws, { header: 1 });
+
+    let section = null;
+    for (let i = 0; i < pRows.length; i++) {
+      const row = pRows[i];
+      if (!row) continue;
+      const firstCell = String(row[0] || '').trim();
+
+      if (firstCell.includes('Own') || firstCell.includes('自チーム')) {
+        section = 'own';
+        continue;
+      }
+      if (firstCell.includes('Opp') || firstCell.includes('相手') || firstCell.includes('Opponent')) {
+        section = 'opp';
+        continue;
+      }
+      if (firstCell === 'No.' || firstCell === 'NO') continue;
+
+      if (section && row[0] != null && typeof row[0] === 'number' && row[1]) {
+        const member = { no: String(row[0]), name: String(row[1]) };
+        if (section === 'own') ownMembers.push(member);
+        else oppMembers.push(member);
+      }
+    }
+  }
+
+  // 4. ファイル名からチーム名推定（vs〇〇）
+  let oppName = '相手チーム';
+  const vsMatch = fileName.match(/vs\s*(.+?)[\s.]/i);
+  if (vsMatch) oppName = vsMatch[1].trim();
+
+  // 大会名推定
+  let tournamentName = '';
+  const tournMatch = fileName.match(/[\d.]+\s+(.+?)vs/i);
+  if (tournMatch) tournamentName = tournMatch[1].trim();
+
+  // 5. matchStateを構築
+  matchState.ownName = matchState.ownName || '自チーム';
+  matchState.oppName = oppName;
+  matchState.tournamentName = tournamentName || matchState.tournamentName || '';
+  matchState.actions = actions;
+  if (ownMembers.length > 0) matchState.ownMembers = ownMembers;
+  if (oppMembers.length > 0) matchState.oppMembers = oppMembers;
+
+  // 統計を再計算
+  matchState.stats = computeStats(actions);
+
+  // 6. UIを分析タブに切替
+  // 試合画面に遷移
+  document.getElementById('homeScreen').style.display = 'none';
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('mainScreen').style.display = 'block';
+
+  // 分析タブに切替
+  document.querySelectorAll('.main-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.view === 'analysis');
+  });
+  document.getElementById('inputView').style.display = 'none';
+  document.getElementById('inputView').classList.remove('active');
+  document.getElementById('analysisView').style.display = '';
+  document.getElementById('analysisView').classList.add('active');
+  renderAnalysisDashboard();
+
+  alert(`✅ Excel読込完了！\n${actions.length}件のアクションデータを読み込みました。\n${matchState.ownName} vs ${matchState.oppName}`);
+}
+
+
 
 async function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
