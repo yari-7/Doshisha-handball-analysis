@@ -43,14 +43,120 @@
                 <button class="btn btn-start" id="homeNewMatchBtn" style="margin-bottom: 12px;">➕ 新しい試合を始める</button>
                 <button class="btn btn-secondary" id="homePrepareMatchBtn" style="margin-bottom: 12px;">📋
                     試合を事前準備</button>
-                <button class="btn btn-outline" id="importExcelBtn" style="margin-bottom: 24px;">📥 Excelデータ読込
+                <button class="btn btn-outline" id="importExcelBtn" style="margin-bottom: 12px;">📥 Excelデータ読込
                     (.xlsm/.xls/.xlsx)</button>
                 <input type="file" id="excelFileInput" accept=".xlsx,.xlsm,.xls" style="display:none;">
+                <div style="display:flex;gap:8px;margin-bottom:24px;">
+                    <button class="btn btn-outline" id="homeTeamSettingsBtn" style="flex:1;">⚙ 自チーム設定</button>
+                    <button class="btn btn-outline" id="homeOppRegistryBtn" style="flex:1;">📒 相手チーム管理</button>
+                </div>
 
                 <h2 class="setup-section-title">🕒 過去の試合</h2>
                 <div id="matchListContainer" class="match-list">
                     <!-- JSで動的に追加 -->
                     <p class="setup-hint" style="text-align: center;">過去のデータはありません</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 自チーム設定モーダル -->
+        <div class="team-settings-modal" id="teamSettingsModal" style="display:none;">
+            <div class="team-settings-content">
+                <div class="team-settings-header">
+                    <h2>⚙ 自チーム設定</h2>
+                    <button class="team-settings-close" id="teamSettingsCloseBtn">✕</button>
+                </div>
+
+                <div class="team-settings-body">
+                    <div class="ts-section">
+                        <label class="ts-label">チーム名</label>
+                        <input type="text" id="tsTeamName" class="form-input" placeholder="チーム名を入力">
+                    </div>
+
+                    <div class="ts-section">
+                        <label class="ts-label">登録選手</label>
+                        <div class="ts-player-list" id="tsPlayerList"></div>
+                        <div class="ts-add-player">
+                            <input type="number" id="tsPlayerNo" class="form-input" placeholder="#" style="width:60px;">
+                            <input type="text" id="tsPlayerName" class="form-input" placeholder="名前" style="flex:1;">
+                            <button class="btn btn-secondary" id="tsAddPlayerBtn"
+                                style="width:auto;padding:8px 16px;">追加</button>
+                        </div>
+                    </div>
+
+                    <div class="ts-section">
+                        <label class="ts-label">GK番号（最大3人）</label>
+                        <div class="ts-gk-row">
+                            <input type="number" id="tsGk1" class="form-input" placeholder="GK1" style="width:70px;">
+                            <input type="number" id="tsGk2" class="form-input" placeholder="GK2" style="width:70px;">
+                            <input type="number" id="tsGk3" class="form-input" placeholder="GK3" style="width:70px;">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-start" id="tsSaveBtn">💾 保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相手チーム管理モーダル -->
+        <div class="team-settings-modal" id="oppRegistryModal" style="display:none;">
+            <div class="team-settings-content">
+                <!-- チーム一覧ビュー -->
+                <div id="oppRegistryListView">
+                    <div class="team-settings-header">
+                        <h2>📒 相手チーム管理</h2>
+                        <button class="team-settings-close" id="oppRegistryCloseBtn">✕</button>
+                    </div>
+                    <div class="team-settings-body">
+                        <div id="oppTeamList"></div>
+                        <div class="ts-section" style="border-top:1px solid rgba(255,255,255,0.08);padding-top:16px;">
+                            <label class="ts-label">＋ 新しいチームを追加</label>
+                            <div class="ts-add-player">
+                                <input type="text" id="oppNewTeamName" class="form-input" placeholder="チーム名"
+                                    style="flex:1;">
+                                <button class="btn btn-secondary" id="oppAddTeamBtn"
+                                    style="width:auto;padding:8px 16px;">追加</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- チーム編集ビュー -->
+                <div id="oppRegistryEditView" style="display:none;">
+                    <div class="team-settings-header">
+                        <button class="folder-back-btn" id="oppEditBackBtn">◀ 戻る</button>
+                        <h2 id="oppEditTitle" style="flex:1;margin-left:8px;">チーム編集</h2>
+                        <button class="team-settings-close" id="oppEditCloseBtn">✕</button>
+                    </div>
+                    <div class="team-settings-body">
+                        <div class="ts-section">
+                            <label class="ts-label">チーム名</label>
+                            <input type="text" id="oppEditTeamName" class="form-input">
+                        </div>
+                        <div class="ts-section">
+                            <label class="ts-label">登録選手</label>
+                            <div class="ts-player-list" id="oppEditPlayerList"></div>
+                            <div class="ts-add-player">
+                                <input type="number" id="oppEditPlayerNo" class="form-input" placeholder="#"
+                                    style="width:60px;">
+                                <input type="text" id="oppEditPlayerName" class="form-input" placeholder="名前"
+                                    style="flex:1;">
+                                <button class="btn btn-secondary" id="oppEditAddPlayerBtn"
+                                    style="width:auto;padding:8px 16px;">追加</button>
+                            </div>
+                        </div>
+                        <div class="ts-section">
+                            <label class="ts-label">GK番号（最大3人）</label>
+                            <div class="ts-gk-row">
+                                <input type="number" id="oppEditGk1" class="form-input" placeholder="GK1"
+                                    style="width:70px;">
+                                <input type="number" id="oppEditGk2" class="form-input" placeholder="GK2"
+                                    style="width:70px;">
+                                <input type="number" id="oppEditGk3" class="form-input" placeholder="GK3"
+                                    style="width:70px;">
+                            </div>
+                        </div>
+                        <button class="btn btn-start" id="oppEditSaveBtn">💾 保存</button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -116,6 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initMainTabs();
   initMatchMenu();
   initMemberEdit();
+  initOppRegistry();
+  initOppAutoFill();
 
   migrateOldData();
   showHomeScreen();
@@ -181,6 +183,308 @@ function initHomeScreen() {
       }
     }
   });
+
+  // Team Settings Button
+  document.getElementById('homeTeamSettingsBtn').addEventListener('click', openTeamSettings);
+  document.getElementById('teamSettingsCloseBtn').addEventListener('click', closeTeamSettings);
+  document.getElementById('tsSaveBtn').addEventListener('click', saveTeamSettingsFromModal);
+  document.getElementById('tsAddPlayerBtn').addEventListener('click', tsAddPlayer);
+  document.getElementById('tsPlayerNo').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('tsPlayerName').focus();
+  });
+  document.getElementById('tsPlayerName').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') tsAddPlayer();
+  });
+}
+
+// ===== 自チーム設定モーダル =====
+let tsPlayers = [];
+
+function openTeamSettings() {
+  const config = getTeamConfig();
+  document.getElementById('tsTeamName').value = config.ownName || '';
+  tsPlayers = [...(config.players || [])];
+  document.getElementById('tsGk1').value = config.gks && config.gks[0] ? config.gks[0] : '';
+  document.getElementById('tsGk2').value = config.gks && config.gks[1] ? config.gks[1] : '';
+  document.getElementById('tsGk3').value = config.gks && config.gks[2] ? config.gks[2] : '';
+  renderTsPlayers();
+  document.getElementById('teamSettingsModal').style.display = 'flex';
+}
+
+function closeTeamSettings() {
+  document.getElementById('teamSettingsModal').style.display = 'none';
+}
+
+function renderTsPlayers() {
+  const container = document.getElementById('tsPlayerList');
+  if (tsPlayers.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem;text-align:center;">選手が登録されていません</p>';
+    return;
+  }
+  container.innerHTML = tsPlayers.map(p => `
+    <div class="ts-player-item">
+      <span class="ts-player-no">#${p.no}</span>
+      <span class="ts-player-name">${p.name || ''}</span>
+      <button class="ts-player-remove" onclick="tsRemovePlayer(${p.no})">✕</button>
+    </div>
+  `).join('');
+}
+
+function tsAddPlayer() {
+  const noInput = document.getElementById('tsPlayerNo');
+  const nameInput = document.getElementById('tsPlayerName');
+  const no = parseInt(noInput.value);
+  if (!no || no < 1 || no > 99) return;
+  if (tsPlayers.some(p => p.no === no)) {
+    noInput.value = '';
+    nameInput.value = '';
+    return;
+  }
+  tsPlayers.push({ no, name: nameInput.value.trim() });
+  tsPlayers.sort((a, b) => a.no - b.no);
+  renderTsPlayers();
+  noInput.value = '';
+  nameInput.value = '';
+  noInput.focus();
+}
+
+function tsRemovePlayer(no) {
+  tsPlayers = tsPlayers.filter(p => p.no !== no);
+  renderTsPlayers();
+}
+window.tsRemovePlayer = tsRemovePlayer;
+
+function saveTeamSettingsFromModal() {
+  const ownName = document.getElementById('tsTeamName').value.trim();
+  if (!ownName) {
+    alert('チーム名を入力してください');
+    return;
+  }
+  const gk1 = parseInt(document.getElementById('tsGk1').value);
+  const gk2 = parseInt(document.getElementById('tsGk2').value);
+  const gk3 = parseInt(document.getElementById('tsGk3').value);
+  const gks = [gk1, gk2, gk3].filter(n => n && !isNaN(n));
+  const config = {
+    ownName: ownName,
+    players: tsPlayers,
+    gks: gks
+  };
+  localStorage.setItem(TEAM_CONFIG_KEY, JSON.stringify(config));
+  alert('✅ 自チーム設定を保存しました');
+  closeTeamSettings();
+}
+
+function getTeamConfig() {
+  const savedConfig = localStorage.getItem(TEAM_CONFIG_KEY);
+  if (savedConfig) {
+    return JSON.parse(savedConfig);
+  }
+  return { ...DEFAULT_TEAM_CONFIG, gks: [] };
+}
+
+// ===== 相手チーム管理 =====
+const OPP_REGISTRY_KEY = 'handball_opp_teams';
+let oppEditPlayers = [];
+let oppEditingTeamId = null;
+
+function getOppRegistry() {
+  const data = localStorage.getItem(OPP_REGISTRY_KEY);
+  return data ? JSON.parse(data) : [];
+}
+
+function saveOppRegistry(teams) {
+  localStorage.setItem(OPP_REGISTRY_KEY, JSON.stringify(teams));
+}
+
+function initOppRegistry() {
+  document.getElementById('homeOppRegistryBtn').addEventListener('click', openOppRegistry);
+  document.getElementById('oppRegistryCloseBtn').addEventListener('click', closeOppRegistry);
+  document.getElementById('oppEditCloseBtn').addEventListener('click', closeOppRegistry);
+  document.getElementById('oppAddTeamBtn').addEventListener('click', addOppTeam);
+  document.getElementById('oppNewTeamName').addEventListener('keydown', (e) => { if (e.key === 'Enter') addOppTeam(); });
+  document.getElementById('oppEditBackBtn').addEventListener('click', showOppListView);
+  document.getElementById('oppEditSaveBtn').addEventListener('click', saveOppTeamEdit);
+  document.getElementById('oppEditAddPlayerBtn').addEventListener('click', oppEditAddPlayer);
+  document.getElementById('oppEditPlayerNo').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('oppEditPlayerName').focus();
+  });
+  document.getElementById('oppEditPlayerName').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') oppEditAddPlayer();
+  });
+}
+
+function openOppRegistry() {
+  showOppListView();
+  document.getElementById('oppRegistryModal').style.display = 'flex';
+}
+
+function closeOppRegistry() {
+  document.getElementById('oppRegistryModal').style.display = 'none';
+}
+
+function showOppListView() {
+  document.getElementById('oppRegistryListView').style.display = '';
+  document.getElementById('oppRegistryEditView').style.display = 'none';
+  renderOppTeamList();
+}
+
+function renderOppTeamList() {
+  const container = document.getElementById('oppTeamList');
+  const teams = getOppRegistry();
+  if (teams.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:16px 0;">登録されたチームはありません</p>';
+    return;
+  }
+  container.innerHTML = teams.map(t => `
+    <div class="opp-team-item">
+      <div class="opp-team-info" onclick="editOppTeam('${t.id}')">
+        <div class="opp-team-name">${t.name}</div>
+        <div class="opp-team-meta">${t.players.length}人登録</div>
+      </div>
+      <button class="ts-player-remove" onclick="event.stopPropagation(); deleteOppTeam('${t.id}')" style="font-size:0.9rem;">✕</button>
+    </div>
+  `).join('');
+}
+
+function addOppTeam() {
+  const nameInput = document.getElementById('oppNewTeamName');
+  const name = nameInput.value.trim();
+  if (!name) return;
+  const teams = getOppRegistry();
+  teams.push({ id: `opp_${Date.now()}`, name, players: [], gks: [] });
+  saveOppRegistry(teams);
+  nameInput.value = '';
+  renderOppTeamList();
+}
+
+function deleteOppTeam(id) {
+  if (!confirm('このチームを削除しますか？')) return;
+  const teams = getOppRegistry().filter(t => t.id !== id);
+  saveOppRegistry(teams);
+  renderOppTeamList();
+}
+window.deleteOppTeam = deleteOppTeam;
+
+function editOppTeam(id) {
+  const teams = getOppRegistry();
+  const team = teams.find(t => t.id === id);
+  if (!team) return;
+  oppEditingTeamId = id;
+  oppEditPlayers = [...team.players];
+  document.getElementById('oppEditTeamName').value = team.name;
+  document.getElementById('oppEditTitle').textContent = team.name;
+  document.getElementById('oppEditGk1').value = team.gks && team.gks[0] ? team.gks[0] : '';
+  document.getElementById('oppEditGk2').value = team.gks && team.gks[1] ? team.gks[1] : '';
+  document.getElementById('oppEditGk3').value = team.gks && team.gks[2] ? team.gks[2] : '';
+  renderOppEditPlayers();
+  document.getElementById('oppRegistryListView').style.display = 'none';
+  document.getElementById('oppRegistryEditView').style.display = '';
+}
+window.editOppTeam = editOppTeam;
+
+function renderOppEditPlayers() {
+  const container = document.getElementById('oppEditPlayerList');
+  if (oppEditPlayers.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem;text-align:center;">選手が登録されていません</p>';
+    return;
+  }
+  container.innerHTML = oppEditPlayers.map(p => `
+    <div class="ts-player-item">
+      <span class="ts-player-no">#${p.no}</span>
+      <span class="ts-player-name">${p.name || ''}</span>
+      <button class="ts-player-remove" onclick="oppEditRemovePlayer(${p.no})">✕</button>
+    </div>
+  `).join('');
+}
+
+function oppEditAddPlayer() {
+  const noInput = document.getElementById('oppEditPlayerNo');
+  const nameInput = document.getElementById('oppEditPlayerName');
+  const no = parseInt(noInput.value);
+  if (!no || no < 1 || no > 99) return;
+  if (oppEditPlayers.some(p => p.no === no)) { noInput.value = ''; nameInput.value = ''; return; }
+  oppEditPlayers.push({ no, name: nameInput.value.trim() });
+  oppEditPlayers.sort((a, b) => a.no - b.no);
+  renderOppEditPlayers();
+  noInput.value = '';
+  nameInput.value = '';
+  noInput.focus();
+}
+
+function oppEditRemovePlayer(no) {
+  oppEditPlayers = oppEditPlayers.filter(p => p.no !== no);
+  renderOppEditPlayers();
+}
+window.oppEditRemovePlayer = oppEditRemovePlayer;
+
+function saveOppTeamEdit() {
+  const name = document.getElementById('oppEditTeamName').value.trim();
+  if (!name) { alert('チーム名を入力してください'); return; }
+  const gk1 = parseInt(document.getElementById('oppEditGk1').value);
+  const gk2 = parseInt(document.getElementById('oppEditGk2').value);
+  const gk3 = parseInt(document.getElementById('oppEditGk3').value);
+  const gks = [gk1, gk2, gk3].filter(n => n && !isNaN(n));
+  const teams = getOppRegistry();
+  const idx = teams.findIndex(t => t.id === oppEditingTeamId);
+  if (idx >= 0) {
+    teams[idx].name = name;
+    teams[idx].players = oppEditPlayers;
+    teams[idx].gks = gks;
+    saveOppRegistry(teams);
+    alert('✅ 保存しました');
+    showOppListView();
+  }
+}
+
+// 試合設定画面での相手チーム自動入力
+function initOppAutoFill() {
+  const oppInput = document.getElementById('oppTeamInput');
+  if (!oppInput) return;
+
+  // 候補表示用の要素を作成
+  const suggestBox = document.createElement('div');
+  suggestBox.id = 'oppTeamSuggest';
+  suggestBox.className = 'opp-suggest-box';
+  suggestBox.style.display = 'none';
+  oppInput.parentNode.style.position = 'relative';
+  oppInput.parentNode.appendChild(suggestBox);
+
+  oppInput.addEventListener('input', () => {
+    const val = oppInput.value.trim();
+    if (!val) { suggestBox.style.display = 'none'; return; }
+    const teams = getOppRegistry();
+    const matches = teams.filter(t => t.name.toLowerCase().includes(val.toLowerCase()));
+    if (matches.length === 0) { suggestBox.style.display = 'none'; return; }
+    suggestBox.innerHTML = matches.map(t =>
+      `<div class="opp-suggest-item" data-id="${t.id}">${t.name}<span class="opp-suggest-meta">${t.players.length}人</span></div>`
+    ).join('');
+    suggestBox.style.display = '';
+    suggestBox.querySelectorAll('.opp-suggest-item').forEach(item => {
+      item.addEventListener('click', () => {
+        applyOppTeam(item.dataset.id);
+        suggestBox.style.display = 'none';
+      });
+    });
+  });
+
+  oppInput.addEventListener('blur', () => {
+    setTimeout(() => { suggestBox.style.display = 'none'; }, 200);
+  });
+}
+
+function applyOppTeam(teamId) {
+  const teams = getOppRegistry();
+  const team = teams.find(t => t.id === teamId);
+  if (!team) return;
+  document.getElementById('oppTeamInput').value = team.name;
+  matchState.oppPlayers = [...team.players];
+  renderRegisteredOppPlayers();
+  // GK自動入力
+  if (team.gks && team.gks.length > 0) {
+    if (document.getElementById('oppGkInput1')) document.getElementById('oppGkInput1').value = team.gks[0] || '';
+    if (document.getElementById('oppGkInput2')) document.getElementById('oppGkInput2').value = team.gks[1] || '';
+    if (document.getElementById('oppGkInput3')) document.getElementById('oppGkInput3').value = team.gks[2] || '';
+  }
 }
 
 function showHomeScreen() {
@@ -237,54 +541,93 @@ function renderMatchList() {
   // 1. Group by tournamentName
   const grouped = {};
   index.forEach(match => {
-    const tName = match.tournamentName && match.tournamentName.trim() !== '' ? match.tournamentName : '未分類 (その他の試合)';
+    const tName = match.tournamentName && match.tournamentName.trim() !== '' ? match.tournamentName : '未分類';
     if (!grouped[tName]) {
       grouped[tName] = [];
     }
     grouped[tName].push(match);
   });
 
-  // 2. Sort groups (Uncategorized at the bottom, rest by latest match inside)
+  // 2. Sort groups
   const groupArray = Object.keys(grouped).map(key => {
     const matches = grouped[key];
-    matches.sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort matches inside group by date descending
+    matches.sort((a, b) => new Date(b.date) - new Date(a.date));
+    const preparedCount = matches.filter(m => m.status === 'prepared').length;
     return {
       name: key,
       matches: matches,
-      latestDate: new Date(matches[0].date).getTime()
+      latestDate: new Date(matches[0].date).getTime(),
+      preparedCount: preparedCount
     };
   });
 
   groupArray.sort((a, b) => {
-    if (a.name === '未分類 (その他の試合)') return 1;
-    if (b.name === '未分類 (その他の試合)') return -1;
-    return b.latestDate - a.latestDate; // Latest folders first
+    if (a.name === '未分類') return 1;
+    if (b.name === '未分類') return -1;
+    return b.latestDate - a.latestDate;
   });
 
-  // 3. Render HTML
-  let html = '';
-  groupArray.forEach((group, i) => {
-    // Generate matches HTML
-    // 事前準備済みの試合は別スタイルで表示
-    const matchesHtml = group.matches.map(match => {
-      const d = new Date(match.date);
-      const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-      const title = `${match.ownName} vs ${match.oppName}`;
+  // 3. Render folder grid (Files app style)
+  let html = '<div class="folder-grid">';
+  groupArray.forEach(group => {
+    const latestMatch = group.matches[0];
+    const d = new Date(latestMatch.date);
+    const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    const preparedBadge = group.preparedCount > 0 ? `<span class="folder-badge-prepared">${group.preparedCount}件準備中</span>` : '';
 
-      if (match.status === 'prepared') {
-        return `
-          <div class="match-list-item match-prepared" onclick="startPreparedMatch('${match.id}')">
-            <div class="match-item-info">
-              <div class="match-item-title">📋 ${title}</div>
-              <div class="match-item-date">事前準備済み</div>
-              <div class="match-item-score" style="color:#5eead4;">▶ タップで開始</div>
-            </div>
-            <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
+    html += `
+      <div class="folder-card" onclick="openFolder('${group.name.replace(/'/g, "\\'")}')">
+        <div class="folder-card-icon">📁</div>
+        <div class="folder-card-name">${group.name}</div>
+        <div class="folder-card-meta">${group.matches.length}試合 · ${dateStr}</div>
+        ${preparedBadge}
+      </div>
+    `;
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
+function openFolder(folderName) {
+  const container = document.getElementById('matchListContainer');
+  const index = getMatchIndex();
+
+  // Filter matches for this folder
+  const matches = index.filter(m => {
+    const tName = m.tournamentName && m.tournamentName.trim() !== '' ? m.tournamentName : '未分類';
+    return tName === folderName;
+  });
+  matches.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // Render folder detail view
+  let html = `
+    <div class="folder-detail-header">
+      <button class="folder-back-btn" onclick="closeFolderView()">◀ 戻る</button>
+      <div class="folder-detail-title">📁 ${folderName}</div>
+      <div class="folder-detail-count">${matches.length}試合</div>
+    </div>
+    <div class="folder-detail-list">
+  `;
+
+  matches.forEach(match => {
+    const d = new Date(match.date);
+    const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const title = `${match.ownName} vs ${match.oppName}`;
+
+    if (match.status === 'prepared') {
+      html += `
+        <div class="match-list-item match-prepared" onclick="startPreparedMatch('${match.id}')">
+          <div class="match-item-info">
+            <div class="match-item-title">📋 ${title}</div>
+            <div class="match-item-date">事前準備済み</div>
+            <div class="match-item-score" style="color:#5eead4;">▶ タップで開始</div>
           </div>
-        `;
-      }
-
-      return `
+          <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
+        </div>
+      `;
+    } else {
+      html += `
         <div class="match-list-item" onclick="resumeMatchById('${match.id}')">
           <div class="match-item-info">
             <div class="match-item-title">${title}</div>
@@ -294,39 +637,18 @@ function renderMatchList() {
           <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
         </div>
       `;
-    }).join('');
-
-    // Folders are expanded by default if they are the first one, or if there's only one.
-    const isFirst = i === 0;
-    const collapseClass = isFirst ? '' : 'collapsed';
-
-    html += `
-      <div class="tournament-folder ${collapseClass}" id="folder-${i}">
-        <div class="tournament-header" onclick="toggleTournamentFolder(${i})">
-          <div class="folder-title-group">
-            <span class="folder-icon">📁</span>
-            <span class="folder-title">${group.name}</span>
-            <span class="folder-count">${group.matches.length}</span>
-          </div>
-          <span class="folder-icon-chevron">▼</span>
-        </div>
-        <div class="tournament-contents">
-          ${matchesHtml}
-        </div>
-      </div>
-    `;
+    }
   });
 
+  html += '</div>';
   container.innerHTML = html;
 }
 
-function toggleTournamentFolder(index) {
-  const folder = document.getElementById(`folder-${index}`);
-  if (folder) {
-    folder.classList.toggle('collapsed');
-  }
+function closeFolderView() {
+  renderMatchList();
 }
-window.toggleTournamentFolder = toggleTournamentFolder;
+window.openFolder = openFolder;
+window.closeFolderView = closeFolderView;
 
 // ========================================
 // 試合設定画面
@@ -384,15 +706,15 @@ function updateSetupButtons() {
 }
 
 function loadSavedTeamConfig() {
-  const savedConfig = localStorage.getItem(TEAM_CONFIG_KEY);
-  if (savedConfig) {
-    const config = JSON.parse(savedConfig);
-    document.getElementById('ownTeamInput').value = config.ownName || '';
-    matchState.players = config.players || [];
-  } else {
-    // Apply Default
-    document.getElementById('ownTeamInput').value = DEFAULT_TEAM_CONFIG.ownName;
-    matchState.players = [...DEFAULT_TEAM_CONFIG.players];
+  const config = getTeamConfig();
+  document.getElementById('ownTeamInput').value = config.ownName || '';
+  matchState.players = [...(config.players || [])];
+
+  // GK auto-fill
+  if (config.gks && config.gks.length > 0) {
+    if (document.getElementById('ownGkInput1')) document.getElementById('ownGkInput1').value = config.gks[0] || '';
+    if (document.getElementById('ownGkInput2')) document.getElementById('ownGkInput2').value = config.gks[1] || '';
+    if (document.getElementById('ownGkInput3')) document.getElementById('ownGkInput3').value = config.gks[2] || '';
   }
   renderRegisteredPlayers();
 }
@@ -400,7 +722,8 @@ function loadSavedTeamConfig() {
 function saveTeamConfig() {
   const config = {
     ownName: document.getElementById('ownTeamInput').value || matchState.ownName,
-    players: matchState.players
+    players: matchState.players,
+    gks: matchState.ownGkList || []
   };
   localStorage.setItem(TEAM_CONFIG_KEY, JSON.stringify(config));
 }
@@ -1350,7 +1673,7 @@ function renderPlayerGrid() {
     grid.style.display = 'flex';
     grid.innerHTML = matchState.players.map(p => {
       const isActive = inputState.playerNo === p.no;
-      return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}</button>`;
+      return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}${p.name ? `<small class="player-btn-name">${p.name}</small>` : ''}</button>`;
     }).join('');
 
     grid.querySelectorAll('.player-btn').forEach(btn => {
@@ -1383,7 +1706,7 @@ function renderPlayerGrid() {
       oppInput.style.display = 'none'; // Use grid for Opp too
       grid.innerHTML = matchState.oppPlayers.map(p => {
         const isActive = inputState.playerNo === p.no;
-        return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}</button>`;
+        return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}${p.name ? `<small class="player-btn-name">${p.name}</small>` : ''}</button>`;
       }).join('');
 
       grid.querySelectorAll('.player-btn').forEach(btn => {
@@ -1753,7 +2076,7 @@ function updateScoreDisplay() {
 // ========================================
 // 入力履歴
 // ========================================
-function renderHistory() {
+function renderHistory(scrollToIndex) {
   const list = document.getElementById('historyList');
   const count = document.getElementById('historyCount');
   const actions = matchState.actions;
@@ -1773,7 +2096,7 @@ function renderHistory() {
     const teamClass = a.team === 'Own' ? 'own' : 'opp';
     const memoHtml = a.memo ? `<span class="history-memo">(${a.memo})</span>` : '';
     html += `
-      <div class="history-item">
+      <div class="history-item" data-index="${i}">
         <span class="history-time">${a.exactTime || a.time}</span>
         <span class="history-team ${teamClass}">${a.team === 'Own' ? matchState.ownName.charAt(0) : matchState.oppName.charAt(0)}</span>
         <span class="history-no">${a.no ? '#' + a.no : '-'}</span>
@@ -1789,11 +2112,17 @@ function renderHistory() {
       </div>
     `;
   });
-  // 最後の挿入ボタン（最末尾への追加用は不要 — 普通の入力で末尾追加できるため）
 
   list.innerHTML = html;
 
-  // 最新のアクションが見えるよう自動スクロール
+  // スクロール位置: 指定indexがあればその行へ、なければ最下部へ
+  if (scrollToIndex !== undefined && scrollToIndex !== null) {
+    const targetEl = list.querySelector(`[data-index="${scrollToIndex}"]`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ block: 'center' });
+      return;
+    }
+  }
   list.scrollTop = list.scrollHeight;
 }
 
@@ -1835,7 +2164,8 @@ function deleteAction(index) {
   matchState.stats = computeStats(matchState.actions);
   saveData();
   updateScoreDisplay();
-  renderHistory();
+  const scrollTo = Math.min(index, matchState.actions.length - 1);
+  renderHistory(scrollTo >= 0 ? scrollTo : null);
 }
 
 let editingIndex = null;
@@ -1883,8 +2213,9 @@ function saveEdit() {
   matchState.stats = computeStats(matchState.actions);
   saveData();
   updateScoreDisplay();
-  renderHistory();
+  const savedIndex = editingIndex;
   closeEditModal();
+  renderHistory(savedIndex);
 }
 
 function closeEditModal() {
@@ -2177,13 +2508,22 @@ function computeStats(actions) {
 function mapToPosition(action, zone) {
   if (action === 'WS' && zone === 'L') return 'LW';
   if (action === 'WS' && zone === 'R') return 'RW';
-  if (action === 'LS' || action === 'BT') return 'PV';
+  if (action === 'WS' && zone === 'C') return 'CB';
+  // LS・BTはゾーンに基づいてポジション分類（CからのLSはCB、LからはLBなど）
+  if (action === 'LS' || action === 'BT') {
+    if (zone === 'LW') return 'LW';
+    if (zone === 'L') return 'LB';
+    if (zone === 'C') return 'CB';
+    if (zone === 'R') return 'RB';
+    if (zone === 'RW') return 'RW';
+    return 'PV'; // ゾーンが不明な場合のフォールバック
+  }
+  if (action === 'PS') return 'PV'; // ポストシュートは常にPV
   if (action === 'DS' && zone === 'L') return 'LB';
   if (action === 'DS' && zone === 'R') return 'RB';
   if (action === 'DS' && zone === 'C') return 'CB';
   if (action === 'PT') return 'PT';
   if (action === 'EG') return 'CB';
-  if (action === 'WS' && zone === 'C') return 'CB';
   return null;
 }
 
@@ -3265,19 +3605,38 @@ async function generatePdfReport() {
     dashboardContent.insertBefore(headerDiv, dashboardContent.firstChild);
 
     const captureAndAdd = async (el) => {
-      // グラフアニメーション描画待ち
-      await wait(300);
+      // Chart.jsキャンバスを静的画像に変換（html2canvasがcanvasを正しく読めない問題の対策）
+      const chartCanvases = el.querySelectorAll('canvas');
+      const originals = [];
+      chartCanvases.forEach(cvs => {
+        try {
+          const img = document.createElement('img');
+          img.src = cvs.toDataURL('image/png');
+          img.style.width = cvs.style.width || cvs.offsetWidth + 'px';
+          img.style.height = cvs.style.height || cvs.offsetHeight + 'px';
+          img.style.display = 'block';
+          originals.push({ canvas: cvs, parent: cvs.parentNode, next: cvs.nextSibling });
+          cvs.parentNode.replaceChild(img, cvs);
+        } catch (e) {
+          console.warn('Canvas to img conversion failed:', e);
+        }
+      });
+
+      await wait(500);
       try {
         const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#0a0e1a', useCORS: true, logging: false });
 
         if (canvas.width === 0 || canvas.height === 0) {
           console.warn("Skipping 0x0 element:", el.className, el.id);
+          // 復元
+          originals.forEach(o => { if (o.next) o.parent.insertBefore(o.canvas, o.next); else o.parent.appendChild(o.canvas); });
           return;
         }
 
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
         if (imgData === 'data:,') {
           console.warn("Skipping empty imgData for element:", el.className, el.id);
+          originals.forEach(o => { if (o.next) o.parent.insertBefore(o.canvas, o.next); else o.parent.appendChild(o.canvas); });
           return;
         }
 
@@ -3291,10 +3650,18 @@ async function generatePdfReport() {
           currentY = margin;
         }
         pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 8; // 下部マージン
+        currentY += imgHeight + 8;
       } catch (e) {
         console.warn("html2canvas capture failed for element:", el, e);
       }
+
+      // Chart.jsキャンバスを復元
+      originals.forEach(o => {
+        const img = o.next ? o.next.previousSibling : o.parent.lastChild;
+        if (img && img.tagName === 'IMG') {
+          o.parent.replaceChild(o.canvas, img);
+        }
+      });
     };
 
     const children = Array.from(dashboardContent.children);
