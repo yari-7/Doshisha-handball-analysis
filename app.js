@@ -589,54 +589,87 @@ function renderMatchList() {
   container.innerHTML = html;
 }
 
+let folderEditMode = false;
+let selectedMatchIds = new Set();
+let currentOpenFolderName = null;
+
 function openFolder(folderName) {
+  currentOpenFolderName = folderName;
   const container = document.getElementById('matchListContainer');
   const index = getMatchIndex();
 
-  // Filter matches for this folder
   const matches = index.filter(m => {
     const tName = m.tournamentName && m.tournamentName.trim() !== '' ? m.tournamentName : '未分類';
     return tName === folderName;
   });
   matches.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Render folder detail view
+  const editBtnLabel = folderEditMode ? '完了' : '編集';
+  const editBtnClass = folderEditMode ? 'folder-edit-btn active' : 'folder-edit-btn';
+
   let html = `
     <div class="folder-detail-header">
       <button class="folder-back-btn" onclick="closeFolderView()">◀ 戻る</button>
       <div class="folder-detail-title">📁 ${folderName}</div>
       <div class="folder-detail-count">${matches.length}試合</div>
+      <button class="${editBtnClass}" onclick="toggleFolderEditMode()">${editBtnLabel}</button>
     </div>
-    <div class="folder-detail-list">
   `;
+
+  if (folderEditMode) {
+    html += `
+      <div class="folder-batch-bar">
+        <span id="selectedCount">${selectedMatchIds.size}件選択中</span>
+        <button class="folder-batch-delete-btn" onclick="batchDeleteMatches()" ${selectedMatchIds.size === 0 ? 'disabled' : ''}>🗑 選択を削除</button>
+      </div>
+    `;
+  }
+
+  html += '<div class="folder-detail-list">';
 
   matches.forEach(match => {
     const d = new Date(match.date);
     const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
     const title = `${match.ownName} vs ${match.oppName}`;
+    const isSelected = selectedMatchIds.has(match.id);
 
-    if (match.status === 'prepared') {
+    if (folderEditMode) {
+      // 編集モード: チェックボックス付き
       html += `
-        <div class="match-list-item match-prepared" onclick="startPreparedMatch('${match.id}')">
+        <div class="match-list-item ${isSelected ? 'match-selected' : ''}" onclick="toggleMatchSelect('${match.id}')">
+          <div class="match-checkbox ${isSelected ? 'checked' : ''}">✓</div>
           <div class="match-item-info">
-            <div class="match-item-title">📋 ${title}</div>
-            <div class="match-item-date">事前準備済み</div>
-            <div class="match-item-score" style="color:#5eead4;">▶ タップで開始</div>
+            <div class="match-item-title">${match.status === 'prepared' ? '📋 ' : ''}${title}</div>
+            <div class="match-item-date">${match.status === 'prepared' ? '事前準備済み' : dateStr}</div>
+            <div class="match-item-score">${match.status === 'prepared' ? '' : `${match.scoreOwn} - ${match.scoreOpp}`}</div>
           </div>
-          <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
         </div>
       `;
     } else {
-      html += `
-        <div class="match-list-item" onclick="resumeMatchById('${match.id}')">
-          <div class="match-item-info">
-            <div class="match-item-title">${title}</div>
-            <div class="match-item-date">${dateStr}</div>
-            <div class="match-item-score">${match.scoreOwn} - ${match.scoreOpp}</div>
+      // 通常モード
+      if (match.status === 'prepared') {
+        html += `
+          <div class="match-list-item match-prepared" onclick="startPreparedMatch('${match.id}')">
+            <div class="match-item-info">
+              <div class="match-item-title">📋 ${title}</div>
+              <div class="match-item-date">事前準備済み</div>
+              <div class="match-item-score" style="color:#5eead4;">▶ タップで開始</div>
+            </div>
+            <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
           </div>
-          <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
-        </div>
-      `;
+        `;
+      } else {
+        html += `
+          <div class="match-list-item" onclick="resumeMatchById('${match.id}')">
+            <div class="match-item-info">
+              <div class="match-item-title">${title}</div>
+              <div class="match-item-date">${dateStr}</div>
+              <div class="match-item-score">${match.scoreOwn} - ${match.scoreOpp}</div>
+            </div>
+            <button class="match-delete-btn" onclick="event.stopPropagation(); deleteMatchById('${match.id}')" title="削除">🗑️</button>
+          </div>
+        `;
+      }
     }
   });
 
@@ -644,11 +677,58 @@ function openFolder(folderName) {
   container.innerHTML = html;
 }
 
+function toggleFolderEditMode() {
+  folderEditMode = !folderEditMode;
+  if (!folderEditMode) selectedMatchIds.clear();
+  openFolder(currentOpenFolderName);
+}
+
+function toggleMatchSelect(id) {
+  if (selectedMatchIds.has(id)) {
+    selectedMatchIds.delete(id);
+  } else {
+    selectedMatchIds.add(id);
+  }
+  openFolder(currentOpenFolderName);
+}
+
+function batchDeleteMatches() {
+  if (selectedMatchIds.size === 0) return;
+  if (!confirm(`${selectedMatchIds.size}件の試合データを削除しますか？\nこの操作は取り消せません。`)) return;
+
+  selectedMatchIds.forEach(id => {
+    localStorage.removeItem(`handball_${id}`);
+  });
+
+  const index = getMatchIndex();
+  saveMatchIndex(index.filter(m => !selectedMatchIds.has(m.id)));
+  selectedMatchIds.clear();
+  folderEditMode = false;
+
+  // フォルダ内に試合が残っているか確認
+  const remaining = getMatchIndex().filter(m => {
+    const tName = m.tournamentName && m.tournamentName.trim() !== '' ? m.tournamentName : '未分類';
+    return tName === currentOpenFolderName;
+  });
+
+  if (remaining.length === 0) {
+    renderMatchList(); // フォルダが空ならフォルダ一覧に戻る
+  } else {
+    openFolder(currentOpenFolderName);
+  }
+}
+
 function closeFolderView() {
+  folderEditMode = false;
+  selectedMatchIds.clear();
+  currentOpenFolderName = null;
   renderMatchList();
 }
 window.openFolder = openFolder;
 window.closeFolderView = closeFolderView;
+window.toggleFolderEditMode = toggleFolderEditMode;
+window.toggleMatchSelect = toggleMatchSelect;
+window.batchDeleteMatches = batchDeleteMatches;
 
 // ========================================
 // 試合設定画面
