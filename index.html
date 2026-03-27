@@ -230,7 +230,7 @@
                                     min="1" max="99">
                             </div>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="oppGkSetupGroup">
                             <label>相手チームGK</label>
                             <div class="gk-inputs-row">
                                 <input type="number" id="oppGkInput1" placeholder="1" class="form-input gk-input"
@@ -246,9 +246,22 @@
 
                 <div class="setup-section">
                     <h2 class="setup-section-title">⏱️ 試合設定</h2>
-                    <div class="form-group">
+                    <div class="form-group" style="margin-bottom: 16px;">
                         <label>ハーフ時間（分）</label>
                         <input type="number" id="halfDurationInput" class="form-input" value="30" min="1" max="60">
+                    </div>
+
+                    <div class="form-group"
+                        style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                        <div>
+                            <label style="margin-bottom: 2px; font-weight: 700;">🏐 練習試合モード</label>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">相手チームのみポジション名で入力します（相手選手の登録不要）
+                            </div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="practiceModeToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
                 </div>
 

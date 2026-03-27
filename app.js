@@ -78,7 +78,8 @@ let matchState = {
   halfDuration: 30,
   actions: [],
   stats: null,
-  startTime: null
+  startTime: null,
+  isPracticeMatch: false // ★練習試合モードフラグ
 };
 
 
@@ -118,6 +119,17 @@ document.addEventListener('DOMContentLoaded', () => {
   initMemberEdit();
   initOppRegistry();
   initOppAutoFill();
+
+  // 練習試合モードのトグル連動
+  const practiceToggle = document.getElementById('practiceModeToggle');
+  if (practiceToggle) {
+    practiceToggle.addEventListener('change', (e) => {
+      const isPractice = e.target.checked;
+      const oppGkGroup = document.getElementById('oppGkSetupGroup');
+      if (sections[2]) sections[2].style.display = isPractice ? 'none' : '';
+      if (oppGkGroup) oppGkGroup.style.display = isPractice ? 'none' : '';
+    });
+  }
 
   migrateOldData();
   showHomeScreen();
@@ -896,6 +908,8 @@ function startMatch() {
 
   const halfDuration = parseInt(document.getElementById('halfDurationInput').value);
 
+  const isPracticeMatch = document.getElementById('practiceModeToggle').checked;
+
   if (!ownName || !oppName) {
     alert('チーム名を入力してください');
     return;
@@ -913,13 +927,33 @@ function startMatch() {
     return;
   }
 
+  matchState.isPracticeMatch = isPracticeMatch;
+
+  if (isPracticeMatch) {
+    const practicePlayers = [
+      { no: 'LW', name: 'レフトウィング' },
+      { no: 'LB', name: 'レフトバック' },
+      { no: 'CB', name: 'センターバック' },
+      { no: 'PV', name: 'ポスト' },
+      { no: 'RB', name: 'ライトバック' },
+      { no: 'RW', name: 'ライトウィング' },
+      { no: 'GK', name: 'ゴールキーパー' }
+    ];
+    matchState.oppPlayers = [...practicePlayers];
+    matchState.ownGkList = ownGks;
+    matchState.oppGkList = ['GK'];
+    matchState.ownGk = ownGks[0];
+    matchState.oppGk = 'GK';
+  } else {
+    matchState.ownGkList = ownGks;
+    matchState.oppGkList = oppGks;
+    matchState.ownGk = ownGks[0];
+    matchState.oppGk = oppGks.length > 0 ? oppGks[0] : 1;
+  }
+
   matchState.ownName = ownName;
   matchState.oppName = oppName;
-  matchState.tournamentName = document.getElementById('tournamentNameInput').value.trim(); // Store Tournament Name
-  matchState.ownGkList = ownGks; // Store list
-  matchState.oppGkList = oppGks; // Store list
-  matchState.ownGk = ownGks[0]; // Set first as active
-  matchState.oppGk = oppGks.length > 0 ? oppGks[0] : 1;
+  matchState.tournamentName = document.getElementById('tournamentNameInput').value.trim();
 
   matchState.halfDuration = halfDuration;
   matchState.actions = [];
@@ -976,14 +1010,35 @@ function prepareMatchSave() {
   const oppGks = [oppGk1, oppGk2, oppGk3].filter(n => n && !isNaN(n));
 
   const halfDuration = parseInt(document.getElementById('halfDurationInput').value) || 30;
+  const isPracticeMatch = document.getElementById('practiceModeToggle').checked;
+
+  matchState.isPracticeMatch = isPracticeMatch;
+
+  if (isPracticeMatch) {
+    const practicePlayers = [
+      { no: 'LW', name: 'レフトウィング' },
+      { no: 'LB', name: 'レフトバック' },
+      { no: 'CB', name: 'センターバック' },
+      { no: 'PV', name: 'ポスト' },
+      { no: 'RB', name: 'ライトバック' },
+      { no: 'RW', name: 'ライトウィング' },
+      { no: 'GK', name: 'ゴールキーパー' }
+    ];
+    matchState.oppPlayers = [...practicePlayers];
+    matchState.ownGkList = ownGks;
+    matchState.oppGkList = ['GK'];
+    matchState.ownGk = ownGks.length > 0 ? ownGks[0] : null;
+    matchState.oppGk = 'GK';
+  } else {
+    matchState.ownGkList = ownGks;
+    matchState.oppGkList = oppGks;
+    matchState.ownGk = ownGks.length > 0 ? ownGks[0] : null;
+    matchState.oppGk = oppGks.length > 0 ? oppGks[0] : null;
+  }
 
   matchState.ownName = ownName;
   matchState.oppName = oppName;
   matchState.tournamentName = document.getElementById('tournamentNameInput').value.trim();
-  matchState.ownGkList = ownGks;
-  matchState.oppGkList = oppGks;
-  matchState.ownGk = ownGks.length > 0 ? ownGks[0] : null;
-  matchState.oppGk = oppGks.length > 0 ? oppGks[0] : null;
   matchState.halfDuration = halfDuration;
   matchState.actions = [];
   matchState.stats = computeStats([]);
@@ -1753,14 +1808,17 @@ function renderPlayerGrid() {
     grid.style.display = 'flex';
     grid.innerHTML = matchState.players.map(p => {
       const isActive = inputState.playerNo === p.no;
-      return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}${p.name ? `<small class="player-btn-name">${p.name}</small>` : ''}</button>`;
+      // 自チームは練習試合モードでも名前を表示する
+      const nameHtml = p.name ? `<small class="player-btn-name">${p.name}</small>` : '';
+      return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}${nameHtml}</button>`;
     }).join('');
 
     grid.querySelectorAll('.player-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         grid.querySelectorAll('.player-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        inputState.playerNo = parseInt(btn.dataset.no);
+        const rawNo = btn.dataset.no;
+        inputState.playerNo = parseInt(rawNo);
       });
     });
 
@@ -1776,24 +1834,22 @@ function renderPlayerGrid() {
     }
 
   } else {
-    // Team Opp (Usually not shooting PT, but for completeness)
-    // If Opp is selected, they are the actors.
-    // If Sanction needed against Own? (Rare for PT input flow, usually PT is Offensive)
-
     // Normal Opp Logic
     if (matchState.oppPlayers && matchState.oppPlayers.length > 0) {
       grid.style.display = 'flex';
       oppInput.style.display = 'none'; // Use grid for Opp too
       grid.innerHTML = matchState.oppPlayers.map(p => {
         const isActive = inputState.playerNo === p.no;
-        return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}${p.name ? `<small class="player-btn-name">${p.name}</small>` : ''}</button>`;
+        const nameHtml = (!matchState.isPracticeMatch && p.name) ? `<small class="player-btn-name">${p.name}</small>` : '';
+        return `<button class="player-btn ${isActive ? 'active' : ''}" data-no="${p.no}" title="${p.name || ''}">${p.no}${nameHtml}</button>`;
       }).join('');
 
       grid.querySelectorAll('.player-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           grid.querySelectorAll('.player-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
-          inputState.playerNo = parseInt(btn.dataset.no);
+          const rawNo = btn.dataset.no;
+          inputState.playerNo = matchState.isPracticeMatch ? rawNo : parseInt(rawNo);
         });
       });
     } else {
@@ -2282,7 +2338,14 @@ function saveEdit() {
   }
 
   a.team = document.getElementById('editTeam').value;
-  a.no = parseInt(document.getElementById('editNo').value) || null;
+  const noInputVal = document.getElementById('editNo').value.trim();
+  if (!noInputVal) {
+    a.no = null;
+  } else if (!isNaN(noInputVal)) {
+    a.no = parseInt(noInputVal);
+  } else {
+    a.no = noInputVal; // For practice mode positions
+  }
   a.phase = document.getElementById('editPhase').value;
   a.action = document.getElementById('editAction').value;
   a.zone = document.getElementById('editZone').value || null;
@@ -2969,7 +3032,10 @@ function renderGKSection() {
       }
     });
 
-    const gkNos = Object.keys(gkStats).sort((a, b) => a - b);
+    const gkNos = Object.keys(gkStats).sort((a, b) => {
+      if (!isNaN(a) && !isNaN(b)) return parseInt(a) - parseInt(b);
+      return a.localeCompare(b);
+    });
     let totalSaves = 0, totalOnTarget = 0;
     gkNos.forEach(no => { totalSaves += gkStats[no].saves; totalOnTarget += gkStats[no].onTarget; });
 
@@ -3038,7 +3104,10 @@ function renderShootingRanking() {
     });
 
     const sorted = Object.entries(playerStats)
-      .map(([no, st]) => ({ no: parseInt(no), ...st, rate: st.shots > 0 ? st.goals / st.shots : 0 }))
+      .map(([no, st]) => {
+        const parsedNo = isNaN(no) ? no : parseInt(no);
+        return { no: parsedNo, ...st, rate: st.shots > 0 ? st.goals / st.shots : 0 };
+      })
       .sort((a, b) => b.rate - a.rate || b.goals - a.goals);
 
     const container = document.getElementById(containerId);
