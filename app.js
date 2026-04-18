@@ -131,6 +131,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 設定項目（チーム名やGK番号など）が変更されたら都度保存する
+  const setupInputs = ['ownTeamInput', 'ownGkInput1', 'ownGkInput2', 'ownGkInput3'];
+  setupInputs.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', saveTeamConfig);
+  });
+
   migrateOldData();
   showHomeScreen();
 });
@@ -835,6 +842,7 @@ function addPlayer() {
   matchState.players.push({ no, name });
   matchState.players.sort((a, b) => a.no - b.no);
   renderRegisteredPlayers();
+  saveTeamConfig();
   noInput.value = '';
   nameInput.value = '';
   noInput.focus();
@@ -843,6 +851,7 @@ function addPlayer() {
 function removePlayer(no) {
   matchState.players = matchState.players.filter(p => p.no !== no);
   renderRegisteredPlayers();
+  saveTeamConfig();
 }
 
 function renderRegisteredPlayers() {
@@ -870,6 +879,7 @@ function addOppPlayer() {
   matchState.oppPlayers.push({ no, name });
   matchState.oppPlayers.sort((a, b) => a.no - b.no);
   renderRegisteredOppPlayers();
+  saveTeamConfig();
   noInput.value = '';
   nameInput.value = '';
   noInput.focus();
@@ -878,6 +888,7 @@ function addOppPlayer() {
 function removeOppPlayer(no) {
   matchState.oppPlayers = matchState.oppPlayers.filter(p => p.no !== no);
   renderRegisteredOppPlayers();
+  saveTeamConfig();
 }
 
 function renderRegisteredOppPlayers() {
@@ -984,6 +995,7 @@ function startMatch() {
   }
   saveMatchIndex(index);
 
+  saveTeamConfig(); // Ensure cross-match setup templates are saved!
   saveData();
   sessionInitialSnapshot = JSON.stringify(matchState);
   showMainScreen();
