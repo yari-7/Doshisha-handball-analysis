@@ -1659,14 +1659,18 @@ function endMatch() {
 function getTimePeriodFromStopwatch() {
   const mins = Math.floor(stopwatch.elapsed / 60);
   const halfDur = matchState.halfDuration || 30;
+
+  let isGrossTime = (mins >= halfDur && (stopwatch.half === 2 || stopwatch.half === 3 || stopwatch.half === 4));
   let offset = 0;
 
-  if (stopwatch.half === 1) offset = 0;
-  else if (stopwatch.half === 2) offset = halfDur;
-  else if (stopwatch.half === 3) offset = halfDur * 2; // Ext1 Start (e.g. 60)
-  else if (stopwatch.half === 4) offset = (halfDur * 2) + 5; // Ext1 Second
-  else if (stopwatch.half === 5) offset = (halfDur * 2) + 10; // Ext2 Start
-  else if (stopwatch.half === 6) offset = (halfDur * 2) + 15; // Ext2 Second
+  if (!isGrossTime) {
+    if (stopwatch.half === 1) offset = 0;
+    else if (stopwatch.half === 2) offset = halfDur;
+    else if (stopwatch.half === 3) offset = halfDur * 2; // Ext1 Start (e.g. 60)
+    else if (stopwatch.half === 4) offset = (halfDur * 2) + 5; // Ext1 Second
+    else if (stopwatch.half === 5) offset = (halfDur * 2) + 10; // Ext2 Start
+    else if (stopwatch.half === 6) offset = (halfDur * 2) + 15; // Ext2 Second
+  }
 
   const pStart = Math.floor(mins / 5) * 5;
   const pEnd = pStart + 5;
@@ -2332,9 +2336,24 @@ function saveEdit() {
   // time period を exactTime から推定
   if (newTime && newTime.includes(':')) {
     const mins = parseInt(newTime.split(':')[0]);
-    const periodStart = Math.floor(mins / 5) * 5;
-    const periodEnd = periodStart + 5;
-    a.time = `${String(periodStart).padStart(2, '0')}~${String(periodEnd).padStart(2, '0')}`;
+    const halfDur = matchState.halfDuration || 30;
+
+    // 如果ユーザーが後半で「35分」など通算時間を入力した場合を考慮
+    // (mins が halfDur を超えている場合は既に通算時間扱いとする)
+    let isGrossTime = mins >= halfDur && (a.half === 2 || a.half === 3 || a.half === 4);
+
+    let offset = 0;
+    if (!isGrossTime) {
+      if (a.half === 2) offset = halfDur;
+      else if (a.half === 3) offset = halfDur * 2;
+      else if (a.half === 4) offset = (halfDur * 2) + 5;
+      else if (a.half === 5) offset = (halfDur * 2) + 10;
+      else if (a.half === 6) offset = (halfDur * 2) + 15;
+    }
+
+    const pStart = Math.floor(mins / 5) * 5;
+    const pEnd = pStart + 5;
+    a.time = `${String(pStart + offset).padStart(2, '0')}~${String(pEnd + offset).padStart(2, '0')}`;
   }
 
   a.team = document.getElementById('editTeam').value;
@@ -2354,8 +2373,36 @@ function saveEdit() {
   a.result = document.getElementById('editResult').value;
 
   matchState.stats = computeStats(matchState.actions);
+
+  // Time editing could change the chronological order; sort array to keep it linear.
+  const halfDurHelper = matchState.halfDuration || 30;
+  matchState.actions.sort((act1, act2) => {
+    const getGrossSecs = (act) => {
+      let baseSec = 0;
+      if (act.exactTime && act.exactTime.includes(':')) {
+        const pts = act.exactTime.split(':');
+        baseSec = parseInt(pts[0]) * 60 + parseInt(pts[1]);
+      } else if (act.time && act.time.includes('~')) {
+        baseSec = parseInt(act.time.split('~')[0]) * 60;
+      }
+      // if it's already gross time, don't double add offset
+      let isGross = (Math.floor(baseSec / 60) >= halfDurHelper && act.half > 1);
+      if (isGross) return baseSec;
+
+      let offset = 0;
+      if (act.half === 2) offset = halfDurHelper;
+      else if (act.half === 3) offset = halfDurHelper * 2;
+      else if (act.half === 4) offset = (halfDurHelper * 2) + 5;
+      else if (act.half === 5) offset = (halfDurHelper * 2) + 10;
+      else if (act.half === 6) offset = (halfDurHelper * 2) + 15;
+      return baseSec + (offset * 60);
+    };
+    return getGrossSecs(act1) - getGrossSecs(act2);
+  });
+
   saveData();
   updateScoreDisplay();
+  renderHistory();
   const savedIndex = editingIndex;
   closeEditModal();
   renderHistory(savedIndex);
@@ -2604,6 +2651,15 @@ function computeStats(actions) {
       stats[team][period].fb_attacks++;
     }
 
+    if (a.result === 'Goal') {
+      stats[team].total.goals++;
+      stats[team][period].goals++;
+      if (stats[team].byTime[a.time]) stats[team].byTime[a.time].goals++;
+
+      if (a.phase === 'SetOF') { stats[team][period].set_goals++; stats[team].total.set_goals++; }
+      else { stats[team][period].fb_goals++; stats[team].total.fb_goals++; }
+    }
+
     if (isShotAction) {
       stats[team].total.shots++;
       stats[team][period].shots++;
@@ -2615,15 +2671,9 @@ function computeStats(actions) {
       if (pos && stats[team].byPosition[pos]) stats[team].byPosition[pos].shots++;
 
       if (a.result === 'Goal') {
-        stats[team].total.goals++;
-        stats[team][period].goals++;
-        if (stats[team].byTime[a.time]) stats[team].byTime[a.time].goals++;
         if (stats[team].byShoot[a.action]) stats[team].byShoot[a.action].goals++;
         if (stats[team].byZone[a.zone]) stats[team].byZone[a.zone].goals++;
         if (pos && stats[team].byPosition[pos]) stats[team].byPosition[pos].goals++;
-
-        if (a.phase === 'SetOF') { stats[team][period].set_goals++; stats[team].total.set_goals++; }
-        else { stats[team][period].fb_goals++; stats[team].total.fb_goals++; }
       }
 
       if (a.result === 'Save') {
@@ -3236,7 +3286,7 @@ function renderScoringFlow() {
       if (a.team === 'Own') ownScore++;
       else oppScore++;
       goalActions.push({
-        label: `${a.time}`,
+        label: `${a.exactTime || a.time}`,
         own: ownScore,
         opp: oppScore,
         team: a.team
@@ -3889,6 +3939,14 @@ async function generatePdfReport() {
         const filterLabels = { '全て': '全て', 'Own': matchState.ownName, 'Opp': matchState.oppName, 'Goal': 'Goal', 'TO': 'TO' };
 
         for (const filterVal of filterValues) {
+          // 各項目（全て、Own、Oppなど）は必ず新しいページから開始する
+          if (currentY > margin + 5) {
+            pdf.addPage();
+            pdf.setFillColor(10, 14, 26);
+            pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
+            currentY = margin;
+          }
+
           let actions = [...matchState.actions];
           if (filterVal === 'Own') actions = actions.filter(a => a.team === 'Own');
           else if (filterVal === 'Opp') actions = actions.filter(a => a.team === 'Opp');
@@ -3905,47 +3963,72 @@ async function generatePdfReport() {
             return `<span style="${tabStyle}">${label}</span>`;
           }).join('');
 
-          // タイムライン行HTML
-          let rowsHtml = '';
-          if (actions.length === 0) {
-            rowsHtml = '<div style="color:#64748b;padding:20px;text-align:center;">データなし</div>';
-          } else {
-            rowsHtml = `<div style="display:flex;gap:8px;font-weight:700;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:10px;margin-bottom:8px;">
-              <span style="min-width:44px">時間</span><span style="min-width:36px">チーム</span><span style="min-width:24px">No</span>
-              <span style="min-width:48px">フェーズ</span><span style="min-width:28px">種別</span><span style="min-width:16px">Z</span><span>結果</span>
-            </div>`;
-            actions.forEach(a => {
-              const teamBg = a.team === 'Own' ? 'background:#2563eb;color:#fff;' : 'background:#dc2626;color:#fff;';
-              const phaseColor = a.phase !== 'SetOF' ? 'color:#60a5fa;font-weight:700;' : 'color:#94a3b8;';
-              let resultStyle = 'background:rgba(148,163,184,0.3);color:#e2e8f0;';
-              if (a.result === 'Goal') resultStyle = 'background:rgba(16,185,129,0.4);color:#6ee7b7;';
-              else if (a.result === 'Save') resultStyle = 'background:rgba(245,158,11,0.4);color:#fcd34d;';
-              else if (a.result === 'Out' || a.result === 'Block') resultStyle = 'background:rgba(239,68,68,0.3);color:#fca5a5;';
-              rowsHtml += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);">
-                <span style="font-family:monospace;color:#e2e8f0;font-size:0.72rem;min-width:44px;">${a.time}</span>
-                <span style="font-weight:700;min-width:36px;padding:2px 6px;border-radius:4px;text-align:center;font-size:0.7rem;${teamBg}">${a.team === 'Own' ? matchState.ownName.charAt(0) : matchState.oppName.charAt(0)}</span>
-                <span style="font-weight:700;font-family:monospace;min-width:24px;color:#f8fafc;">#${a.no}</span>
-                <span style="font-size:0.7rem;min-width:48px;${phaseColor}">${a.phase}</span>
-                <span style="font-weight:600;min-width:28px;color:#f8fafc;">${a.action}</span>
-                <span style="color:#94a3b8;min-width:16px;">${a.zone || ''}</span>
-                <span style="padding:2px 10px;border-radius:4px;font-weight:600;font-size:0.75rem;${resultStyle}">${a.result}</span>
-              </div>`;
-            });
-          }
+          // チャンクに分割して複数ページに対応する
+          const chunkSize = 25; // 1ページに収まる安全な行数
+          const numChunks = Math.max(1, Math.ceil(actions.length / chunkSize));
 
-          // 独立したDOMノードを作成
-          const standalone = document.createElement('div');
-          standalone.style.cssText = 'position:absolute;left:0;top:0;width:1200px;background:#0a0e1a;padding:20px;z-index:99999;font-family:Inter,sans-serif;color:#f1f5f9;';
-          standalone.innerHTML = `
-            <div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:#f1f5f9;">
-              <span style="font-size:1.2rem;">⏱️</span>アクションタイムライン
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:16px;">${tabsHtml}</div>
-            <div style="padding:16px;background:#0f1629;border:1px solid rgba(255,255,255,0.2);border-radius:12px;">${rowsHtml}</div>
-          `;
-          document.body.appendChild(standalone);
-          await captureAndAdd(standalone);
-          standalone.remove();
+          for (let i = 0; i < numChunks; i++) {
+            const chunk = actions.slice(i * chunkSize, (i + 1) * chunkSize);
+
+            // タイムライン行HTML生成
+            let rowsHtml = '';
+            if (chunk.length === 0 && i === 0 && actions.length === 0) {
+              rowsHtml = '<div style="color:#64748b;padding:20px;text-align:center;">データなし</div>';
+            } else if (chunk.length > 0) {
+              rowsHtml = `<div style="display:flex;gap:8px;font-weight:700;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:10px;margin-bottom:8px;">
+                <span style="min-width:44px">時間</span><span style="min-width:36px">チーム</span><span style="min-width:24px">No</span>
+                <span style="min-width:48px">フェーズ</span><span style="min-width:28px">種別</span><span style="min-width:16px">Z</span><span>結果</span>
+              </div>`;
+
+              chunk.forEach(a => {
+                const teamBg = a.team === 'Own' ? 'background:#2563eb;color:#fff;' : 'background:#dc2626;color:#fff;';
+                const phaseColor = a.phase !== 'SetOF' ? 'color:#60a5fa;font-weight:700;' : 'color:#94a3b8;';
+                let resultStyle = 'background:rgba(148,163,184,0.3);color:#e2e8f0;';
+                if (a.result === 'Goal') resultStyle = 'background:rgba(16,185,129,0.4);color:#6ee7b7;';
+                else if (a.result === 'Save') resultStyle = 'background:rgba(245,158,11,0.4);color:#fcd34d;';
+                else if (a.result === 'Out' || a.result === 'Block') resultStyle = 'background:rgba(239,68,68,0.3);color:#fca5a5;';
+                rowsHtml += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:0.8rem;border-bottom:1px solid rgba(255,255,255,0.08);">
+                  <span style="font-family:monospace;color:#e2e8f0;font-size:0.72rem;min-width:44px;">${a.time}</span>
+                  <span style="font-weight:700;min-width:36px;padding:2px 6px;border-radius:4px;text-align:center;font-size:0.7rem;${teamBg}">${a.team === 'Own' ? matchState.ownName.charAt(0) : matchState.oppName.charAt(0)}</span>
+                  <span style="font-weight:700;font-family:monospace;min-width:24px;color:#f8fafc;">#${a.no}</span>
+                  <span style="font-size:0.7rem;min-width:48px;${phaseColor}">${a.phase}</span>
+                  <span style="font-weight:600;min-width:28px;color:#f8fafc;">${a.action}</span>
+                  <span style="color:#94a3b8;min-width:16px;">${a.zone || ''}</span>
+                  <span style="padding:2px 10px;border-radius:4px;font-weight:600;font-size:0.75rem;${resultStyle}">${a.result}</span>
+                </div>`;
+              });
+            }
+
+            if (rowsHtml || (i === 0 && actions.length === 0)) {
+              // 独立したDOMノードを作成
+              const standalone = document.createElement('div');
+              standalone.style.cssText = 'position:absolute;left:0;top:0;width:1200px;background:#0a0e1a;padding:20px;z-index:99999;font-family:Inter,sans-serif;color:#f1f5f9;';
+
+              let headerHtml = '';
+              if (i === 0) {
+                headerHtml = `
+                  <div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:#f1f5f9;">
+                    <span style="font-size:1.2rem;">⏱️</span>アクションタイムライン
+                  </div>
+                  <div style="display:flex;gap:8px;margin-bottom:16px;">${tabsHtml}</div>
+                `;
+              } else {
+                headerHtml = `
+                  <div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:#f1f5f9;">
+                    <span style="font-size:1.2rem;">⏱️</span>アクションタイムライン (${filterLabels[filterVal]} - 続き)
+                  </div>
+                `;
+              }
+
+              standalone.innerHTML = headerHtml + `
+                <div style="padding:16px;background:#0f1629;border:1px solid rgba(255,255,255,0.2);border-radius:12px;">${rowsHtml}</div>
+              `;
+
+              document.body.appendChild(standalone);
+              await captureAndAdd(standalone);
+              standalone.remove();
+            }
+          }
         }
 
         // 元のUIのフィルター復元
